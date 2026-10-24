@@ -334,7 +334,7 @@ svg.i{width:16px;height:16px;flex:none}
 .empty .typesel button[aria-pressed="true"]{border-color:var(--fg);color:var(--fg)}
 .kind{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg);font-weight:600}
 .item{border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px;background:var(--panel2)}
-.item.done{opacity:.6}
+.item.done{opacity:.6}.item .meta input{margin:0 2px 0 0;accent-color:var(--fg)}.cbatch{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:10px;background:var(--panel2)}.cbatch span{font-size:12px;color:var(--muted);flex:1;min-width:120px}.cqueue{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:30;font:600 12px var(--font-ui);background:var(--fg);color:var(--bg);border:0;border-radius:99px;padding:7px 14px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.18);white-space:nowrap}.cqueue:hover{opacity:.9}
 .item .meta{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .item .meta img{width:18px;height:18px;border-radius:50%}
 .item p{margin:0 0 8px;overflow-wrap:anywhere;white-space:pre-wrap}
@@ -516,8 +516,9 @@ textarea.code{width:100%;font:12px/1.5 'JetBrains Mono',monospace;background:var
               <div class="cpop" id="cpop" hidden>
                 <div class="ctx" id="cctx"></div>
                 <textarea id="ctext" rows="3" placeholder="O que mudar aqui? Ex.: deixe isto vermelho" aria-label="Comentário"></textarea>
-                <div class="row"><button class="btn sm" id="cCancel">Cancelar</button><button class="btn sm" id="cSave">Comentar</button><button class="btn sm accent" id="cSend">Enviar ao Claude</button></div>
+                <div class="row"><button class="btn sm" id="cCancel">Cancelar</button><button class="btn sm" id="cSave" title="Guarda o comentário para enviar junto com os outros">Adicionar à lista</button><button class="btn sm accent" id="cSend">Enviar ao Claude</button></div>
               </div>
+              <button class="cqueue" id="cQueue" hidden></button>
             </div>
           </div>
           <div class="thumb" id="thumb" hidden><canvas id="thumbCv"></canvas><div id="thumbTx"></div></div>

@@ -292,6 +292,7 @@ function buildPrompt(cmd,extra){
   var TT=TYPES[P.type]||TYPES.explainer;
   return RULES+'\n\nTIPO DE VÍDEO: '+TT.name+' (formato sugerido '+TT.fmt+'). '+TT.hint+'\n\nSELEÇÃO ATUAL: cena "'+sc.id+'" ('+esc(sc.name)+', '+(selScene+1)+' de '+P.scenes.length+'); '+(e?'elemento "'+e.id+'" ('+KNAME[e.kind]+': '+elName(e)+')':'nenhum elemento')+'; tempo '+t.toFixed(2)+' s.'+
     (extra&&extra.comment?'\nO PEDIDO VEIO DE UM COMENTÁRIO no palco, no tempo '+extra.comment.t+' s, na posição x='+Math.round(extra.comment.x*PW)+' y='+Math.round(extra.comment.y*PH)+(extra.comment.el?' sobre o elemento "'+extra.comment.el+'"':'')+'.':'')+
+    (extra&&extra.comments?'\nO PEDIDO REÚNE '+extra.comments.length+' COMENTÁRIOS feitos no palco. Atenda TODOS numa única resposta (um só conjunto de operações), na ordem:\n'+extra.comments.map(function(c,i){return (i+1)+') tempo '+c.t+' s, x='+Math.round(c.x*PW)+' y='+Math.round(c.y*PH)+(c.el?', elemento "'+c.el+'"':'')+(c.scene?', cena "'+c.scene+'"':'')+': '+c.text}).join('\n')+'\nNa resposta, diga em uma linha o que fez em cada comentário, pelo número.':'')+
     (CH.att.length?'\nA pessoa anexou '+CH.att.length+' imagem(ns) de referência (cores, layout ou estilo).':'')+
     (recent?'\n\nCONVERSA RECENTE:\n'+recent:'')+
     '\n\nPROJETO ATUAL:\n'+JSON.stringify(compactProject())+'\n\nPEDIDO: '+cmd;

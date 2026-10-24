@@ -196,7 +196,7 @@ handlers.aiapply=function(){if(!claudeReview)return;setTab('tweaks');sendText('A
 /* =========================================================
    Comentários (compartilhados quando o banco está disponível)
    ========================================================= */
-var pendingC=null,PROFILES={};
+var pendingC=null,PROFILES={},PROF_ASKED={};
 function openComposer(hit){
   var cp=$('#cpop');cp.hidden=false;
   $('#cctx').textContent=fmtT(pendingC.t)+(hit?' · '+elName(hit):' · cena '+(selScene+1));
@@ -212,12 +212,34 @@ function saveComment(send){
   else{c.id=nid('c');COMMENTS.push(c)}
   afterComments();
   if(send)sendComment(c);
+  else{var n=queuedComments().length;toast(n>1?'Comentário na lista. São '+n+' para enviar juntos: use “Enviar '+n+' comentários ao Claude” no palco ou na aba Comentários.':'Comentário na lista. Adicione outros e envie todos de uma vez.')}
 }
 $('#cCancel').addEventListener('click',closeComposer);
 $('#cSave').addEventListener('click',function(){saveComment(false)});
 $('#cSend').addEventListener('click',function(){saveComment(true)});
 $('#ctext').addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();saveComment(true)}});
-function afterComments(){COMMENTS.sort(function(a,b){return (a.at||0)-(b.at||0)});renderStrip();renderTabs();if(tab==='comments')renderPanel();updateOverlay()}
+function afterComments(){COMMENTS.sort(function(a,b){return (a.at||0)-(b.at||0)});renderStrip();renderTabs();if(tab==='comments')renderPanel();updateOverlay();renderQueue()}
+/* --- fila: comentários abertos que ainda não foram enviados --- */
+var CSEL={};
+function queuedComments(){return COMMENTS.filter(function(c){return !c.done&&!c.sent})}
+function isSel(c){return c.id in CSEL?CSEL[c.id]:(!c.done&&!c.sent)}
+function selectedComments(){return COMMENTS.filter(isSel)}
+function renderQueue(){var b=$('#cQueue');if(!b)return;var n=queuedComments().length;b.hidden=!n;if(n)b.textContent=n>1?'Enviar '+n+' comentários ao Claude':'Enviar 1 comentário ao Claude'}
+$('#cQueue').addEventListener('click',function(e){e.stopPropagation();sendComments(queuedComments())});
+$('#cQueue').addEventListener('pointerdown',function(e){e.stopPropagation()});
+function commentLine(c,i){var f=findAny(c.el),sc=sceneAt(c.t);return (i+1)+'. '+fmtT(c.t)+' · cena '+(sc.i+1)+(f&&f.el?' · «'+elName(f.el)+'»':'')+': '+c.text}
+function sendComments(list){
+  list=list.filter(Boolean);if(!list.length){toast('Nenhum comentário selecionado.');return}
+  if(list.length===1){sendComment(list[0]);return}
+  if(CH.busy){toast('Aguarde a resposta anterior.');return}
+  list=list.slice().sort(function(a,b){return a.t-b.t});
+  var first=list[0],f=findAny(first.el);if(f&&f.el){selScene=f.si;selEl=first.el}else{selScene=sceneAt(first.t).i;selEl=null}
+  seek(first.t);renderLayers();
+  list.forEach(function(c){if(CAP.db&&c.id&&!c.sent)CAP.db.doc('comments/'+c.id).update({sent:true}).catch(function(){});c.sent=true;delete CSEL[c.id]});
+  $('#app').dataset.tab='chat';syncMobTabs();afterComments();
+  var lines=list.map(commentLine).join('\n');
+  sendText(list.length+' comentários:\n'+lines,'Atenda todos estes comentários de uma vez:\n'+lines,{comments:list});
+}
 function sendComment(c){
   var f=findAny(c.el);if(f&&f.el){selScene=f.si;selEl=c.el}else{var a=sceneAt(c.t);selScene=a.i;selEl=null}
   seek(c.t);renderLayers();renderPanel();
@@ -228,20 +250,25 @@ function sendComment(c){
 }
 function profName(id){if(!id)return 'Alguém';if(id===ME.id)return 'Você';var p=PROFILES[id];return (p&&p.name)||'Alguém'}
 function resolveProfiles(ids){
-  if(!CAP.user||!CAP.user.profiles)return;ids=ids.filter(function(x){return x&&!PROFILES[x]});if(!ids.length)return;
+  if(!CAP.user||!CAP.user.profiles)return;ids=ids.filter(function(x,i,a){return x&&!PROFILES[x]&&!PROF_ASKED[x]&&a.indexOf(x)===i});if(!ids.length)return;ids.forEach(function(x){PROF_ASKED[x]=1});
   CAP.user.profiles(ids).then(function(ps){Object.keys(ps||{}).forEach(function(k){PROFILES[k]=ps[k]});if(tab==='comments'||tab==='versions')renderPanel();renderPeers()}).catch(function(){});
 }
 function panelComments(pane){
   var h='';resolveProfiles(COMMENTS.map(function(c){return c.by}));
+  var nsel=selectedComments().length,nopen=COMMENTS.filter(function(c){return !c.done}).length;
+  if(COMMENTS.length)h+='<div class="cbatch"><span>'+(nsel?nsel+' selecionado(s) para enviar num único pedido':'Marque os comentários que quer enviar juntos')+'</span><button class="btn sm" data-act="cselall">'+(nsel&&nsel>=nopen?'Desmarcar todos':'Marcar abertos')+'</button><button class="btn sm accent" data-act="csendsel"'+(nsel?'':' disabled')+'>Enviar '+(nsel>1?nsel+' ':'')+'ao Claude</button></div>';
   if(!COMMENTS.length)h+='<p class="info">Escolha a ferramenta <b>Comentar</b>, clique no palco e escreva o que mudar. O comentário fica marcado no tempo e no lugar exatos'+(CAP.db?' e todas as pessoas com acesso veem.':'.')+'</p>';
   COMMENTS.forEach(function(c,i){
     var f=findAny(c.el),p=PROFILES[c.by];
-    h+='<div class="item'+(c.done?' done':'')+'" id="cm-'+esc(c.id)+'"><div class="meta">'+(p&&p.avatarUrl?'<img src="'+esc(p.avatarUrl)+'" alt="">':'')+'<b>'+esc(profName(c.by))+'</b><span>· '+fmtT(c.t)+(f&&f.el?' · '+esc(elName(f.el)):'')+(c.sent?' · enviado ao Claude':'')+'</span></div><p>'+esc(c.text)+'</p><div class="btnrow"><button class="btn sm" data-act="csend" data-id="'+esc(c.id)+'">Enviar ao Claude</button><button class="btn sm" data-act="cgo" data-id="'+esc(c.id)+'">Ir</button><button class="btn sm" data-act="cdone" data-id="'+esc(c.id)+'">'+(c.done?'Reabrir':'Resolver')+'</button><button class="btn sm icon" data-act="cdel" data-id="'+esc(c.id)+'" aria-label="Excluir comentário">'+IC.trash+'</button></div></div>';
+    h+='<div class="item'+(c.done?' done':'')+'" id="cm-'+esc(c.id)+'"><div class="meta"><input type="checkbox" data-act="csel" data-id="'+esc(c.id)+'"'+(isSel(c)?' checked':'')+' aria-label="Incluir no envio em lote">'+(p&&p.avatarUrl?'<img src="'+esc(p.avatarUrl)+'" alt="">':'')+'<b>'+esc(profName(c.by))+'</b><span>· '+fmtT(c.t)+(f&&f.el?' · '+esc(elName(f.el)):'')+(c.sent?' · enviado ao Claude':'')+'</span></div><p>'+esc(c.text)+'</p><div class="btnrow"><button class="btn sm" data-act="csend" data-id="'+esc(c.id)+'">Enviar ao Claude</button><button class="btn sm" data-act="cgo" data-id="'+esc(c.id)+'">Ir</button><button class="btn sm" data-act="cdone" data-id="'+esc(c.id)+'">'+(c.done?'Reabrir':'Resolver')+'</button><button class="btn sm icon" data-act="cdel" data-id="'+esc(c.id)+'" aria-label="Excluir comentário">'+IC.trash+'</button></div></div>';
   });
   pane.innerHTML=h;
 }
 function cById(id){return COMMENTS.filter(function(c){return c.id===id})[0]}
 handlers.csend=function(b){var c=cById(b.dataset.id);if(c)sendComment(c)};
+handlers.csel=function(b){var c=cById(b.dataset.id);if(!c)return;CSEL[c.id]=!isSel(c);renderPanel()};
+handlers.cselall=function(){var open=COMMENTS.filter(function(c){return !c.done}),all=open.length&&open.every(isSel);COMMENTS.forEach(function(c){CSEL[c.id]=all?false:!c.done});renderPanel()};
+handlers.csendsel=function(){sendComments(selectedComments())};
 handlers.cgo=function(b){var c=cById(b.dataset.id);if(!c)return;var f=findAny(c.el);if(f&&f.el){selScene=f.si;selEl=c.el}seek(c.t);renderLayers();renderPanel()};
 handlers.cdone=function(b){var c=cById(b.dataset.id);if(!c)return;c.done=!c.done;if(CAP.db)CAP.db.doc('comments/'+c.id).update({done:c.done}).catch(function(){});afterComments()};
 handlers.cdel=function(b){var id=b.dataset.id;COMMENTS=COMMENTS.filter(function(c){return c.id!==id});if(CAP.db)CAP.db.doc('comments/'+id).delete().catch(function(){});afterComments()};
