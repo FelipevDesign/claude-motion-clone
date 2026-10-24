@@ -27,7 +27,7 @@ function elName(e){
   if(e.kind==='image'||e.kind==='video'){var m=mediaById(e.src);if(m)return m.name}
   return KNAME[e.kind];
 }
-function fetchBin(url){if(url&&url.indexOf('data:')===0){try{var i0=url.indexOf(','),b0=atob(url.slice(i0+1)),u0=new Uint8Array(b0.length);for(var q=0;q<b0.length;q++)u0[q]=b0.charCodeAt(q);return Promise.resolve(u0.buffer)}catch(x){return Promise.reject(x)}}return fetch(url).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.arrayBuffer()}).then(function(ab){
+function fetchBin(url){if(!url)return Promise.reject(new Error('Arquivo não encontrado (endereço vazio).'));if(url.indexOf('data:')===0){try{var i0=url.indexOf(','),b0=atob(url.slice(i0+1)),u0=new Uint8Array(b0.length);for(var q=0;q<b0.length;q++)u0[q]=b0.charCodeAt(q);return Promise.resolve(u0.buffer)}catch(x){return Promise.reject(x)}}return fetch(url).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.arrayBuffer()}).then(function(ab){
   var h=new Uint8Array(ab,0,Math.min(5,ab.byteLength));if(String.fromCharCode.apply(null,h)!=='data:')return ab;
   var txt=new TextDecoder().decode(ab).trim(),b=atob(txt.slice(txt.indexOf(',')+1)),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u.buffer})}
 function mediaById(src){if(!src||!P)return null;for(var i=0;i<P.media.length;i++)if(P.media[i].src===src)return P.media[i];return null}
@@ -97,6 +97,7 @@ function srcURL(src){
   if(!src)return '';
   if(src.indexOf('asset:')===0){var id=src.slice(6);return LOCAL[id]||('/_blob/'+id)}
   if(src.indexOf('local:')===0)return LOCAL[src.slice(6)]||'';
+  if(src.indexOf('idb:')===0)return LOCAL[src.slice(4)]||'';
   if(src.indexOf('data:')===0||src.indexOf('blob:')===0)return src;
   return '';
 }

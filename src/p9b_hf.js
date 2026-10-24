@@ -32,6 +32,19 @@ function hfAnalyze(html){
   return R;
 }
 /* quais arquivos da pasta o index.html (e seus JS/CSS locais) realmente usam */
+/* caminhos citados explicitamente que não vieram na pasta */
+function hfMissing(doc,html,locals,entry,all){
+  var base=dirOf(entry),seen={},out=[];
+  function chk(p,from){if(!p||/\$\{/.test(p)||/^\s*(%23|#|data:|blob:|https?:|\/\/|mailto:|javascript:)/i.test(p))return;var k=joinPath(from==null?base:from,p.trim());if(!k||seen[k])return;seen[k]=1;if(!all[k]&&!HF_SKIP.test(k))out.push(k)}
+  doc.querySelectorAll('[src],[poster],link[href],image[href]').forEach(function(n){['src','poster','href'].forEach(function(a){var v=n.getAttribute(a);if(v&&v.charAt(0)!=='#'&&!(n.tagName==='A'))chk(v)})});
+  doc.querySelectorAll('script[type=importmap]').forEach(function(s){try{var im=JSON.parse(s.textContent);Object.keys(im.imports||{}).forEach(function(k){chk(im.imports[k])})}catch(x){}});
+  var css=[];doc.querySelectorAll('style').forEach(function(s){css.push([s.textContent,null])});doc.querySelectorAll('[style]').forEach(function(n){css.push([n.getAttribute('style'),null])});
+  locals.forEach(function(p){if(/\.css$/i.test(p[0]))css.push([p[1],dirOf(p[0])])});
+  css.forEach(function(c){var m,re=/url\(\s*(['"]?)([^'")]+)\1\s*\)/g;while((m=re.exec(c[0])))chk(m[2],c[1])});
+  var js=[[Array.prototype.map.call(doc.querySelectorAll('script:not([src])'),function(s){return s.textContent}).join('\n'),null]];locals.forEach(function(p){if(/\.m?js$/i.test(p[0]))js.push([p[1],dirOf(p[0])])});
+  js.forEach(function(j){var m,re=/['"`]((?:\.{1,2}\/|[\w\-]+\/)[\w\-\/.%]+\.(?:png|jpe?g|webp|gif|svg|avif|mp4|webm|mov|mp3|wav|flac|ogg|m4a|aac|ttf|otf|woff2?|m?js|css|json|glb|gltf))['"`]/gi;while((m=re.exec(j[0])))chk(m[1],j[1])});
+  return out;
+}
 function hfReferenced(all,texts){
   var big=texts.join('\n'),keys=Object.keys(all),out={},pre=[],m,re=/([\w\-.\/]+)\$\{[^}]*\}([\w\-.]*)/g;
   while((m=re.exec(big)))pre.push([m[1].replace(/^\.\//,''),m[2]]);
@@ -48,13 +61,14 @@ function hfImportFiles(files,root){
   var all={};files.forEach(function(f){var r=relOf(f);if(root.prefix&&r.indexOf(root.prefix)!==0)return;all[r.slice(root.prefix.length)]=f});
   var entry=relOf(root.index).slice(root.prefix.length);
   progressModal('Abrindo composição HTML','Lendo o index.html…');exporting=true;
-  var warn=[];
+  var warn=[],inIdb=[],sess=[];
   return root.index.text().then(function(html){
     var A=hfAnalyze(html),texts=[html];
     var local=Object.keys(all).filter(function(k){return /\.(m?js|css)$/i.test(k)&&!HF_SKIP.test(k)});
     return Promise.all(local.map(function(k){return all[k].text().then(function(t){return [k,t]})})).then(function(list){
       var firstRef=hfReferenced(all,[html]);list.forEach(function(p){if(firstRef[p[0]])texts.push(p[1])});
       var ref=hfReferenced(all,texts);ref[entry]=all[entry];
+      var missing=hfMissing(A.doc,html,list.filter(function(p){return firstRef[p[0]]}),entry,all);
       var keys=Object.keys(ref),files2={},i=0,tot=keys.reduce(function(a,k){return a+ref[k].size},0);
       var audioKeys={};A.audio.forEach(function(a){var k=joinPath(dirOf(entry),a.src);if(k)audioKeys[k]=a});
       return keys.reduce(function(c,k){return c.then(function(){
@@ -66,15 +80,15 @@ function hfImportFiles(files,root){
         else if(f.size>ASSET_MAX&&/^video\//.test(type)){job=videoProxy(f).then(function(b){return putBlob(b,'video/webm',k).then(function(st){st.proxy=true;st.orig={name:k,size:f.size,type:type};warn.push('Vídeo “'+k+'” virou uma prévia de '+fmtMB(b.size)+'.');return st})})}
         else if(f.size>ASSET_MAX&&/^image\//.test(type)){job=imageProxy(f).then(function(b){return putBlob(b,'image/webp',k).then(function(st){st.proxy=true;st.orig={name:k,size:f.size,type:type};warn.push('Imagem “'+k+'” reduzida para caber.');return st})})}
         else job=putBlob(f,type,k);
-        return job.then(function(st){files2[k]={src:st.src,type:type,size:st.size||f.size,where:st.where};if(st.proxy){files2[k].proxy=true;files2[k].orig=st.orig}if(st.where==='session')warn.push('“'+k+'” ficou só nesta sessão (sem espaço para salvar).');else if(st.where==='browser'&&!IS_LOCAL)warn.push('“'+k+'” ficou guardado no navegador (IndexedDB).')})
+        return job.then(function(st){files2[k]={src:st.src,type:type,size:st.size||f.size,where:st.where};if(st.proxy){files2[k].proxy=true;files2[k].orig=st.orig}if(st.where==='session')sess.push(k);else if(st.where==='browser'&&!IS_LOCAL)inIdb.push(k)})
           .catch(function(e){warn.push('Não consegui guardar “'+k+'”: '+(e.message||e))});
       })},Promise.resolve()).then(function(){
         var three='';list.forEach(function(p){var mm=/three\.module(\.min)?\.js$/i.test(p[0])&&/const\s+\w+\s*=\s*"(\d{3})"/.exec(p[1].slice(0,600));if(mm)three='0.'+mm[1]+'.0'});
-        var comp={entry:entry,w:A.w,h:A.h,dur:A.dur||10,fps:A.fps,id:A.id,title:A.title,files:files2,vars:A.vars,values:{},layers:A.layers.map(function(l){return {id:l.id,label:l.label}}),hidden:{},cenas:A.cenas,three:three};
+        var comp={missing:missing,entry:entry,w:A.w,h:A.h,dur:A.dur||10,fps:A.fps,id:A.id,title:A.title,files:files2,vars:A.vars,values:{},layers:A.layers.map(function(l){return {id:l.id,label:l.label}}),hidden:{},cenas:A.cenas,three:three};
         A.layers.forEach(function(l){if(l.hidden)comp.hidden[l.id]=true});
         A.vars.forEach(function(v){comp.values[v.id]=v.default});
         var dur=Math.max(1,comp.dur),htmlEl=el('html',{name:A.title.slice(0,60),x:0,y:0,w:Math.min(2160,A.w),h:Math.min(2160,A.h),comp:comp,anim:{in:'none'}});
-        var audio=[],media=[];A.audio.forEach(function(a){var k=joinPath(dirOf(entry),a.src),fe=files2[k];if(!fe)return;var id=nid('a');
+        var audio=[],media=[];A.audio.forEach(function(a){var k=joinPath(dirOf(entry),a.src),fe=files2[k];if(!fe){warn.push('Faixa de áudio “'+a.label+'” não foi importada: o arquivo '+(k||a.src)+' está faltando na pasta'+(a.muted?' (a faixa já estava oculta com data-hidden)':'')+'.');return}var id=nid('a');
           media.push({id:nid('m'),kind:'audio',name:a.label.slice(0,40),src:fe.src,enc:'',dur:a.dur,size:fe.size,saved:fe.where!=='session',proxy:!!fe.proxy,orig:fe.orig||null,file:k});
           audio.push({id:id,name:a.label,src:fe.src,enc:'',start:a.start,offset:0,dur:a.dur||0,vol:a.vol,fadeIn:0,fadeOut:0,muted:!!a.muted,role:/efeito|sfx|fx\b/i.test(a.label)?'sfx':/voz|locu|narra/i.test(a.label)?'voice':'music',hfId:a.hfId,bpm:0,beats:[]})});
         var proj={name:A.title.slice(0,80),type:'edit',w:Math.min(2160,A.w),h:Math.min(2160,A.h),theme:{bg:'#000000',ink:'#ffffff',accent:'#F89833',on:'#000000'},themeName:'custom',
@@ -82,7 +96,10 @@ function hfImportFiles(files,root){
         exporting=false;setProg(1,'Pronto.');
         return createProject(proj).then(function(){closeModal();
           var msg=[keys.length+' arquivos usados pela composição foram importados ('+fmtMB(tot)+'). '+A.audio.length+' faixa(s) de áudio, '+A.cenas.length+' cena(s), '+A.vars.length+' variável(is) e '+A.layers.length+' camada(s) nomeada(s).'];
-          showImportReport([{ok:1,t:msg[0]}].concat(warn.map(function(w){return {ok:/prévia|guardado como|reduzida/.test(w)?1:0,t:w}})));
+          if(inIdb.length)warn.push('ok:'+inIdb.length+' arquivo(s) ficaram guardados no navegador (IndexedDB), porque o armazenamento do artefato não estava disponível. Eles reabrem neste navegador; em outro computador, importe a pasta de novo.');
+          if(sess.length)warn.push(sess.length+' arquivo(s) ficaram só nesta sessão (sem espaço para salvar): '+sess.slice(0,6).join(', ')+(sess.length>6?'…':'')+'.');
+          if(missing.length)warn.push('Faltando na pasta ('+missing.length+'): '+missing.slice(0,12).join(', ')+(missing.length>12?' e mais '+(missing.length-12):'')+'. O editor não tenta baixar esses arquivos.');
+          showImportReport([{ok:1,t:msg[0]}].concat(warn.map(function(w){var ok=/^ok:/.test(w);return {ok:ok||/prévia|guardado como|reduzida/.test(w)?1:0,t:w.replace(/^ok:/,'')}})));
           selEl=htmlEl.id;openTweaks(true);renderPanel();
         });
       });
@@ -104,10 +121,10 @@ function hfImportSingle(f,text,kind){
 
 /* ---------- montagem do documento que roda no iframe ---------- */
 function hfURL(src){var u=srcURL(src);if(!u)return '';if(u.charAt(0)==='/')return location.origin+u;return u}
-function fetchText(src){return fetch(srcURL(src)).then(function(r){return r.text()})}
+function fetchText(src,label){var u=srcURL(src);if(!u)return Promise.reject(new Error('Arquivo '+(label||src||'?')+' não encontrado. Envie a pasta de novo.'));return fetch(u).then(function(r){if(!r.ok)throw new Error('Arquivo '+(label||src)+' não encontrado ('+r.status+').');return r.text()})}
 function HF_BOOT(MAP,BASE){
   window.__timelines=window.__timelines||{};
-  function norm(p){if(typeof p!=='string')return p;if(/^(data:|blob:|https?:|\/\/|#|about:|javascript:)/i.test(p))return p;var q=p.split(/[?#]/)[0];try{q=decodeURI(q)}catch(e){}var parts=q.charAt(0)==='/'?[]:BASE.split('/').filter(Boolean);q.replace(/^\.\//,'').split('/').forEach(function(s){if(!s||s==='.')return;if(s==='..')parts.pop();else parts.push(s)});var k=parts.join('/');return MAP[k]||p}
+  function norm(p){if(typeof p!=='string')return p;if(/^(data:|blob:|https?:|\/\/|#|about:|javascript:)/i.test(p))return p;var q=p.split(/[?#]/)[0];try{q=decodeURI(q)}catch(e){}var parts=q.charAt(0)==='/'?[]:BASE.split('/').filter(Boolean);q.replace(/^\.\//,'').split('/').forEach(function(s){if(!s||s==='.')return;if(s==='..')parts.pop();else parts.push(s)});var k=parts.join('/');return MAP[k]||(/\.(png|jpe?g|gif|webp|avif|svg)$/i.test(k)?'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==':'data:,')}
   function css(s){return typeof s==='string'?s.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g,function(m,q,u){return 'url('+q+norm(u)+q+')'}):s}
   function html(s){return typeof s==='string'?css(s.replace(/(\s(?:src|href|poster)\s*=\s*)(["'])([^"']*)\2/gi,function(m,a,q,u){return a+q+norm(u)+q})):s}
   window.__hfMap=norm;
@@ -152,30 +169,34 @@ function HF_BOOT(MAP,BASE){
 var THREE_ADDONS={RoundedBoxGeometry:'geometries',TextGeometry:'geometries',DecalGeometry:'geometries',ConvexGeometry:'geometries',RoomEnvironment:'environments',OrbitControls:'controls',TrackballControls:'controls',GLTFLoader:'loaders',RGBELoader:'loaders',DRACOLoader:'loaders',FontLoader:'loaders',SVGLoader:'loaders',OBJLoader:'loaders',MTLLoader:'loaders',FBXLoader:'loaders',EXRLoader:'loaders',KTX2Loader:'loaders',EffectComposer:'postprocessing',RenderPass:'postprocessing',UnrealBloomPass:'postprocessing',OutputPass:'postprocessing',ShaderPass:'postprocessing',SMAAPass:'postprocessing',BokehPass:'postprocessing',CSS2DRenderer:'renderers',CSS3DRenderer:'renderers',Reflector:'objects',Water:'objects',Sky:'objects',RoundedBoxGeometryBuffer:'geometries'};
 /* no artefato, three.js e seus complementos vêm do CDN (permitido), o resto do armazenamento */
 function hfCdn(C,k){if(IS_LOCAL||!C.three||!k)return null;var b=k.split('/').pop();if(/^three\.module(\.min)?\.js$/i.test(b))return 'https://cdn.jsdelivr.net/npm/three@'+C.three+'/build/three.module.min.js';var n=b.replace(/\.js$/,'');if(THREE_ADDONS[n])return 'https://cdn.jsdelivr.net/npm/three@'+C.three+'/examples/jsm/'+THREE_ADDONS[n]+'/'+n+'.js';return null}
-function hfBuildDoc(e){
-  var C=e.comp,fileKeys=Object.keys(C.files||{}),MAP={};fileKeys.forEach(function(k){MAP[k]=hfCdn(C,k)||hfURL(C.files[k].src)});
+function hfBuildDoc(e){return IDB_READY.then(function(){return hfBuildDoc2(e)})}
+var HF_BLANK={img:'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='};
+function hfBuildDoc2(e){
+  var C=e.comp,fileKeys=Object.keys(C.files||{}),MAP={},lost=[];fileKeys.forEach(function(k){var u=hfCdn(C,k)||hfURL(C.files[k].src);if(u)MAP[k]=u;else lost.push(k)});
+  if(!MAP[C.entry])return Promise.reject(new Error('O index.html da composição não está disponível neste navegador. Abra a pasta de novo.'));
+  C.lost=lost;
   var base=dirOf(C.entry);
-  if(C.svg)return fetchText(C.files[C.entry].src).then(function(svg){return '<!DOCTYPE html><html><head><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}svg{width:100%;height:100%;display:block}</style><script>('+HF_BOOT.toString()+')({},"");<\/script></head><body>'+svg.replace(/^<\?xml[^>]*>/,'')+'</body></html>'});
-  return fetchText(C.files[C.entry].src).then(function(html){
+  if(C.svg)return fetchText(C.files[C.entry]&&C.files[C.entry].src,C.entry).then(function(svg){return '<!DOCTYPE html><html><head><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}svg{width:100%;height:100%;display:block}</style><script>('+HF_BOOT.toString()+')({},"");<\/script></head><body>'+svg.replace(/^<\?xml[^>]*>/,'')+'</body></html>'});
+  return fetchText(C.files[C.entry]&&C.files[C.entry].src,C.entry).then(function(html){
     var doc=new DOMParser().parseFromString(html,'text/html');
-    function map(p,from){var k=joinPath(from==null?base:from,p);return k&&MAP[k]?MAP[k]:p}
+    function map(p,from,kind){var k=joinPath(from==null?base:from,p);if(!k)return p;if(MAP[k])return MAP[k];return kind==='img'?HF_BLANK.img:'data:,'}
     function cssFix(s,from){return s.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g,function(m,q,u){return 'url('+q+map(u,from)+q+')'})}
     function jsImports(s,from){return s.replace(/(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{0,2}\/[^'"]+)\2/g,function(m,a,q,u){return a+q+map(u,from)+q})}
     var jobs=[];
     /* variáveis e camadas ocultas */
     if(C.vars&&C.vars.length){var vv=C.vars.map(function(v){var o=Object.assign({},v);if(C.values&&C.values[v.id]!=null)o.default=C.values[v.id];return o});doc.documentElement.setAttribute('data-composition-variables',JSON.stringify(vv))}
     Object.keys(C.hidden||{}).forEach(function(id){var n=doc.querySelector('[data-rev-id="'+id+'"]');if(n&&C.hidden[id])n.setAttribute('data-hidden','')});
-    doc.querySelectorAll('audio').forEach(function(a){a.setAttribute('muted','');a.removeAttribute('autoplay');var s=a.getAttribute('src');if(s)a.setAttribute('src',map(s))});
-    doc.querySelectorAll('[src]').forEach(function(n){if(n.tagName==='SCRIPT')return;n.setAttribute('src',map(n.getAttribute('src')))});
+    doc.querySelectorAll('audio').forEach(function(a){a.setAttribute('muted','');a.removeAttribute('autoplay');a.setAttribute('preload','none');var s=a.getAttribute('src'),k=s&&joinPath(base,s);if(s){if(k&&!MAP[k])a.removeAttribute('src');else a.setAttribute('src',map(s))}});
+    doc.querySelectorAll('[src]').forEach(function(n){if(n.tagName==='SCRIPT'||n.tagName==='AUDIO')return;var s=n.getAttribute('src'),k=joinPath(base,s);if(k&&!MAP[k]&&/^(VIDEO|SOURCE|IFRAME|EMBED|TRACK)$/.test(n.tagName)){n.removeAttribute('src');return}n.setAttribute('src',map(s,null,n.tagName==='IMG'?'img':''))});
     doc.querySelectorAll('[poster]').forEach(function(n){n.setAttribute('poster',map(n.getAttribute('poster')))});
     doc.querySelectorAll('image[href],use[href]').forEach(function(n){var h=n.getAttribute('href');if(h&&h.charAt(0)!=='#')n.setAttribute('href',map(h))});
     doc.querySelectorAll('[style]').forEach(function(n){n.setAttribute('style',cssFix(n.getAttribute('style')))});
     doc.querySelectorAll('style').forEach(function(s){s.textContent=cssFix(s.textContent)});
-    doc.querySelectorAll('link[rel~=stylesheet][href]').forEach(function(l){var k=joinPath(base,l.getAttribute('href'));if(k&&C.files[k]){jobs.push(fetchText(C.files[k].src).then(function(t){var st=doc.createElement('style');st.textContent=cssFix(t,dirOf(k));l.replaceWith(st)}))}});
+    doc.querySelectorAll('link[rel~=stylesheet][href]').forEach(function(l){var k=joinPath(base,l.getAttribute('href'));if(k&&C.files[k]){jobs.push(fetchText(C.files[k].src,k).then(function(t){var st=doc.createElement('style');st.textContent=cssFix(t,dirOf(k));l.replaceWith(st)}))}});
     doc.querySelectorAll('link[rel~=icon][href],link[rel=preload][href]').forEach(function(l){l.setAttribute('href',map(l.getAttribute('href')))});
     doc.querySelectorAll('script[type=importmap]').forEach(function(s){try{var im=JSON.parse(s.textContent);Object.keys(im.imports||{}).forEach(function(k){im.imports[k]=map(im.imports[k])});s.textContent=JSON.stringify(im)}catch(x){}});
-    doc.querySelectorAll('script[src]').forEach(function(s){var src=s.getAttribute('src'),k=joinPath(base,src);if(!k||!C.files[k])return;var isMod=s.getAttribute('type')==='module';
-      jobs.push(fetchText(C.files[k].src).then(function(t){var n=doc.createElement('script');if(isMod){n.type='module';t=jsImports(t,dirOf(k))}n.textContent=t.replace(/<\/script/gi,'<\\/script');s.replaceWith(n)}))});
+    doc.querySelectorAll('script[src]').forEach(function(s){var src=s.getAttribute('src'),k=joinPath(base,src);if(k&&!MAP[k]){s.remove();return}if(!k||!C.files[k])return;var isMod=s.getAttribute('type')==='module';
+      jobs.push(fetchText(C.files[k].src,k).then(function(t){var n=doc.createElement('script');if(isMod){n.type='module';t=jsImports(t,dirOf(k))}n.textContent=t.replace(/<\/script/gi,'<\\/script');s.replaceWith(n)}))});
     doc.querySelectorAll('script[type=module]:not([src])').forEach(function(s){s.textContent=jsImports(s.textContent,base)});
     return Promise.all(jobs).then(function(){
       var boot=doc.createElement('script');boot.textContent='('+HF_BOOT.toString()+')('+JSON.stringify(MAP)+','+JSON.stringify(base)+');';
@@ -249,6 +270,7 @@ function htmlExtras(e){
   var tr=P.audio.filter(function(a){return a.hfId});
   if(tr.length){h+='<details class="grp" open><summary>Faixas de áudio da composição</summary><div class="gb">'+tr.map(function(a){return '<div class="hftrack"><label class="chk"><input type="checkbox" data-htr="'+a.id+'"'+(a.muted?'':' checked')+'> '+esc(a.name)+'</label><input type="range" min="0" max="1.5" step=".05" data-htv="'+a.id+'" value="'+(+a.vol)+'" aria-label="Volume de '+esc(a.name)+'"></div>'}).join('')+'</div></details>'}
   if(C.layers&&C.layers.length){h+='<details class="grp"><summary>Camadas da composição ('+C.layers.length+')</summary><div class="gb hflayers">'+C.layers.map(function(l){var hid=C.hidden&&C.hidden[l.id];return '<button class="hfl'+(hid?' off':'')+'" data-act="hflayer" data-id="'+esc(l.id)+'" aria-pressed="'+(!hid)+'">'+(hid?IC.x:IC.check)+'<span>'+esc(l.label)+'</span></button>'}).join('')+'</div></details>'}
+  var miss=(C.missing||[]).concat(C.lost||[]);if(miss.length)h+='<p class="info" style="color:#d97706">Faltando ('+miss.length+'): '+miss.slice(0,8).map(esc).join(', ')+(miss.length>8?'…':'')+'. Esses arquivos não são buscados.</p>';
   var px=Object.keys(C.files||{}).filter(function(k){return C.files[k].proxy});
   if(px.length)h+='<p class="info">Prévia leve no lugar do original: '+px.map(esc).join(', ')+'. O web app usa os originais.</p>';
   h+='<div class="btnrow"><button class="btn sm" data-act="hfreload">Recarregar</button><button class="btn sm accent" data-act="hfzip">'+IC.dl+'Exportar composição (.zip)</button><button class="btn sm" data-act="hfindex">Só o index.html</button></div>';
@@ -270,7 +292,7 @@ $('#pane').addEventListener('change',function(ev){var x=ev.target,e=findEl(selEl
 
 /* ---------- exportar de volta: index.html com as mudanças + pasta em .zip ---------- */
 function hfPatchedIndex(e){
-  var C=e.comp;return fetchText(C.files[C.entry].src).then(function(html){
+  var C=e.comp;return fetchText(C.files[C.entry]&&C.files[C.entry].src,C.entry).then(function(html){
     function setAttr(tag,name,val){var re=new RegExp('\\s'+name+'(="[^"]*"|=\'[^\']*\'|(?=[\\s>/]))','i');if(val==null)return tag.replace(re,'');var a=' '+name+(val===''?'':'="'+String(val).replace(/"/g,'&quot;')+'"');return re.test(tag)?tag.replace(re,a):tag.replace(/(\s*\/?>)$/,a+'$1')}
     P.audio.filter(function(a){return a.hfId}).forEach(function(a){var re=new RegExp('<audio\\b[^>]*\\bid=["\']'+a.hfId.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'["\'][^>]*>','i');html=html.replace(re,function(tag){tag=setAttr(tag,'data-volume',Math.round(a.vol*100)/100);tag=setAttr(tag,'data-start',Math.round((+a.start||0)*1000)/1000);if(a.dur)tag=setAttr(tag,'data-duration',a.dur);tag=setAttr(tag,'data-hidden',a.muted?'':null);return tag})});
     Object.keys(C.layers||[]).length&&C.layers.forEach(function(l){var re=new RegExp('<[a-z][^>]*\\bdata-rev-id=["\']'+l.id.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'["\'][^>]*>','i');html=html.replace(re,function(tag){return setAttr(tag,'data-hidden',C.hidden&&C.hidden[l.id]?'':null)})});

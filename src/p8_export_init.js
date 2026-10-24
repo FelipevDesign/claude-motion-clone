@@ -259,7 +259,7 @@ function flushSave(){
 function onRemoteProject(snap){
   if(!snap.exists){if(CURP!=='main'){toast('Esse projeto não existe mais. Abrindo o principal.');CURP='main';rememberProj();refilter();subscribeProject();return}firstLoad=false;if(!remoteSeen){remoteSeen=true;setSave('Rascunho')}return}
   remoteSeen=true;var d=snap.data()||{};if(typeof d.json!=='string'){firstLoad=false;return}
-  if(firstLoad){firstLoad=false;dirty=false;clearTimeout(saveTimer);try{P=normProject(JSON.parse(d.json));lastSaved=d.json;hist=[JSON.stringify(P)];hi=0;updUndo();selScene=0;selEl=null;t=0;afterProjectChange();setSave('Salvo');restoreIdbMedia();var pid0=CURP;setTimeout(function(){if(pid0===CURP&&!PROJS.some(function(p){return p.id===CURP&&p.thumb}))writeIndex(true)},2500)}catch(x){setSave('Projeto salvo ilegível',true)}return}
+  if(firstLoad){firstLoad=false;dirty=false;clearTimeout(saveTimer);try{P=normProject(JSON.parse(d.json));lastSaved=d.json;hist=[JSON.stringify(P)];hi=0;updUndo();selScene=0;selEl=null;t=0;restoreIdbMedia();afterProjectChange();setSave('Salvo');var pid0=CURP;setTimeout(function(){if(pid0===CURP&&!PROJS.some(function(p){return p.id===CURP&&p.thumb}))writeIndex(true)},2500)}catch(x){setSave('Projeto salvo ilegível',true)}return}
   if(d.json===lastSaved)return;
   if(d.json===packProject(P)){lastSaved=d.json;setSave('Salvo');return}
   if(dirty||saving||drag||ldrag||adrag)return;
@@ -336,6 +336,7 @@ function init(){
   var pdraft=null;try{pdraft=localStorage.getItem('motion-draft:'+CURP)}catch(x){}if(pdraft)draft=pdraft;
   if(draft){try{P=normProject(JSON.parse(draft))}catch(x){}}
   try{PROJS=localIndex()}catch(x){}
+  restoreIdbMedia();
   applySize();ensureFonts();hist=[JSON.stringify(P)];hi=0;updUndo();setTitles();
   selScene=0;t=1.9;
   applyTypeUI();renderMsgs();

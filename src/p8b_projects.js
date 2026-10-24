@@ -43,7 +43,7 @@ function switchProject(id){
     CHS[CURP]={msgs:CH.msgs,turns:CH.turns};var c=CHS[id]||{msgs:[],turns:[]};CH.msgs=c.msgs;CH.turns=c.turns;
     CURP=id;rememberProj();lastThumb='';lastThumbAt=0;refilter();renderMsgs();closeModal();
     if(CAP.db){subscribeProject()}
-    else{var j=null;try{j=localStorage.getItem('motion-draft:'+id)}catch(x){}if(j){P=normProject(JSON.parse(j));hist=[JSON.stringify(P)];hi=0;updUndo();selScene=0;selEl=null;t=0;afterProjectChange()}firstLoad=false;setSave('Rascunho local')}
+    else{var j=null;try{j=localStorage.getItem('motion-draft:'+id)}catch(x){}if(j){P=normProject(JSON.parse(j));hist=[JSON.stringify(P)];hi=0;updUndo();selScene=0;selEl=null;t=0;restoreIdbMedia();afterProjectChange()}firstLoad=false;setSave('Rascunho local')}
     roomPresence();
   });
 }

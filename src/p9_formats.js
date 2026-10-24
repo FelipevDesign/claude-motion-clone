@@ -79,7 +79,9 @@ function idb(){if(IDB)return IDB;IDB=new Promise(function(res,rej){try{var r=ind
 function idbPut(id,blob){return idb().then(function(db){return new Promise(function(res,rej){var tx=db.transaction('files','readwrite');tx.objectStore('files').put(blob,id);tx.oncomplete=function(){res()};tx.onerror=function(){rej(tx.error)}})})}
 function idbGet(id){return idb().then(function(db){return new Promise(function(res){var tx=db.transaction('files');var q=tx.objectStore('files').get(id);q.onsuccess=function(){res(q.result||null)};q.onerror=function(){res(null)}})})}
 /* restaura as mídias guardadas no navegador ao abrir um projeto */
-function restoreIdbMedia(){var ids=[];P.media.forEach(function(m){if(String(m.src).indexOf('idb:')===0)ids.push(m.src.slice(4))});
+var IDB_READY=Promise.resolve();
+function restoreIdbMedia(){IDB_READY=restoreIdbMediaRun();return IDB_READY}
+function restoreIdbMediaRun(){var ids=[];P.media.forEach(function(m){if(String(m.src).indexOf('idb:')===0)ids.push(m.src.slice(4))});
   (P.scenes||[]).forEach(function(s){s.els.forEach(function(e){if(e.comp&&e.comp.files)Object.keys(e.comp.files).forEach(function(k){var v=e.comp.files[k].src;if(String(v).indexOf('idb:')===0)ids.push(v.slice(4))})})});
   return Promise.all(ids.filter(function(id){return !LOCAL[id]}).map(function(id){return idbGet(id).then(function(b){if(b){LOCAL[id]=URL.createObjectURL(b)}})})).then(function(){if(ids.length)fullRender()})}
 /* guarda qualquer blob; devolve {src, persisted, where} */
