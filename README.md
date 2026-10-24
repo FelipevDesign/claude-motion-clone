@@ -9,6 +9,14 @@ Sem limite de tamanho de mídia: imagens, vídeos, áudios e modelos 3D ficam em
 2. O navegador abre em http://localhost:4321 — use o Chrome ou o Edge.
 3. Para fechar, feche a janela preta do servidor.
 
+## Pelo terminal
+- `npm start` — abre o app.
+- `npm run dev` — modo desenvolvimento: refaz o app ao salvar arquivos em `src/` e reinicia o servidor quando `server.js` muda.
+- `npm run build` — gera `public/index.html` a partir de `src/`.
+
+## Projetos de exemplo
+Na primeira execução, os projetos da pasta `examples` (Guia completo, Tour, Reel · Comover e Resumo do 3º trimestre) são copiados para `data`. Depois disso, `data` é só sua.
+
 ## Claude no chat
 Configure uma opção no arquivo `.env`:
 - **Chave da API** (`ANTHROPIC_API_KEY=...`): pago por uso, aceita imagens anexadas.

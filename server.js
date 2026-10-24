@@ -11,6 +11,10 @@ loadEnv(path.join(ROOT,'.env'));
 const PORT=+process.env.PORT||4321;
 const DATA=path.resolve(ROOT,process.env.DATA_DIR||'data'),DB=path.join(DATA,'db'),MEDIA=path.join(DATA,'media'),EXPORTS=path.resolve(ROOT,process.env.EXPORT_DIR||'exports');
 [DATA,DB,MEDIA,EXPORTS].forEach(d=>fs.mkdirSync(d,{recursive:true}));
+/* primeira execução: copia os projetos de exemplo para a pasta de dados */
+(function seed(){const EX=path.join(ROOT,'examples');try{if(fs.readdirSync(DB).some(f=>f.startsWith('project~~')))return;
+  for(const [from,to] of [['db',DB],['media',MEDIA]]){const dir=path.join(EX,from);if(!fs.existsSync(dir))continue;for(const f of fs.readdirSync(dir))fs.copyFileSync(path.join(dir,f),path.join(to,f))}
+  console.log('  Projetos de exemplo copiados para '+DB)}catch(e){}})();
 const MODELS={quick:process.env.MODEL_QUICK||'claude-haiku-5-5',default:process.env.MODEL_DEFAULT||'claude-sonnet-5-5',complex:process.env.MODEL_COMPLEX||'claude-opus-5-5'};
 
 function loadEnv(f){try{fs.readFileSync(f,'utf8').split(/\r?\n/).forEach(l=>{const m=/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(l);if(m&&!(m[1] in process.env))process.env[m[1]]=m[2].replace(/^["']|["']$/g,'')})}catch(e){}}
