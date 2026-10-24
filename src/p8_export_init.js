@@ -244,21 +244,35 @@ function exportPoster(){
 var saveTimer=null,saving=false,dirty=false,lastSaved='',remoteSeen=false,firstLoad=true;
 function setSave(txt,bad){var s=$('#saveState');s.textContent=txt;s.classList.toggle('bad',!!bad)}
 function scheduleSave(){
-  if(!CAP.db){try{localStorage.setItem('motion-draft:'+CURP,packProject(P))}catch(x){}clearTimeout(saveTimer);saveTimer=setTimeout(function(){localIndexPut(CURP,projMeta(false))},1500);setSave('Rascunho local');return}
+  if(isLocalProj(CURP)){dirty=true;setSave('Salvando…');clearTimeout(saveTimer);saveTimer=setTimeout(function(){if(firstLoad){scheduleSave();return}saveLocalNow(CURP,packProject(P)).catch(function(){})},900);return}
   dirty=true;setSave('Salvando…');clearTimeout(saveTimer);saveTimer=setTimeout(flushSave,1200);
 }
+var saveRetry=0;
 function flushSave(){
-  if(!CAP.db)return;if(saving||firstLoad){saveTimer=setTimeout(flushSave,700);return}
+  if(isLocalProj(CURP)){saveLocalNow(CURP,packProject(P)).catch(function(){});return}
+  if(saving||firstLoad){saveTimer=setTimeout(flushSave,700);return}
   var json=packProject(P);if(json===lastSaved){dirty=false;setSave('Salvo');return}
-  if(json.length>250000){setSave('Projeto grande demais para salvar',true);toast('O projeto passou do limite de 250 KB. Remova cenas ou dados para salvar.');return}
+  if(CAN_WRITE===false){toLocalCopy({code:'permission_denied',message:'você só pode ver este artefato'});return}
   saving=true;var pid=CURP;
-  CAP.db.doc('project/'+pid).set({json:json,by:ME.id||'',at:Date.now()}).then(function(){if(pid!==CURP)return;lastSaved=json;if(packProject(P)===json){dirty=false;setSave('Salvo')}CAP.db.doc('projlist/'+pid).set(projMeta(false)).catch(function(){})})
-  .catch(function(e){var c=e&&e.code;setSave(c==='permission_denied'||c==='not_granted'?'Somente leitura':'Não salvo',true)})
+  writeProjectDoc(pid,json).then(function(){saveRetry=0;if(pid!==CURP)return;lastSaved=json;$('#saveState').title='';if(packProject(P)===json){dirty=false;setSave('Salvo')}CAP.db.doc('projlist/'+pid).set(projMeta(false)).catch(function(){})},
+    function(e){var r=dbErr(e);saving=false;
+      if(pid!==CURP)return;
+      if(noWriteErr(r.code)){if(r.code!=='quota_exceeded')CAN_WRITE=false;return toLocalCopy(e)}
+      setSave('Não salvo: '+r.why,true);$('#saveState').title=r.text;
+      if(retryErr(r.code)&&saveRetry<5){saveRetry++;clearTimeout(saveTimer);saveTimer=setTimeout(flushSave,2000*saveRetry)}
+      else toast('Não salvo: '+r.text,9000)})
   .then(function(){saving=false});
 }
+var remoteSeq=0;
 function onRemoteProject(snap){
-  if(!snap.exists){if(CURP!=='main'){toast('Esse projeto não existe mais. Abrindo o principal.');CURP='main';rememberProj();refilter();subscribeProject();return}firstLoad=false;if(!remoteSeen){remoteSeen=true;setSave('Rascunho')}return}
-  remoteSeen=true;var d=snap.data()||{};if(typeof d.json!=='string'){firstLoad=false;return}
+  var d0=snap.exists?snap.data():null;
+  if(d0&&d0.parts){var my=++remoteSeq,pid=CURP;assembleProject(pid,d0).then(function(j){if(my!==remoteSeq||pid!==CURP)return;onRemoteProject2(snap.exists,Object.assign({},d0,{json:j}))},function(e){if(my!==remoteSeq)return;if(e&&e.code==='stale')return;/* chegam as partes novas em seguida */firstLoad=false;var r=dbErr(e);setSave('Projeto salvo incompleto',true);$('#saveState').title=r.text})
+    return}
+  remoteSeq++;onRemoteProject2(snap.exists,d0);
+}
+function onRemoteProject2(exists,d){
+  if(!exists){if(CURP!=='main'){toast('Esse projeto não existe mais. Abrindo o principal.');CURP='main';rememberProj();refilter();subscribeProject();return}firstLoad=false;if(!remoteSeen){remoteSeen=true;setSave('Rascunho')}return}
+  remoteSeen=true;d=d||{};if(typeof d.json!=='string'){firstLoad=false;return}
   if(firstLoad){firstLoad=false;dirty=false;clearTimeout(saveTimer);try{P=normProject(JSON.parse(d.json));lastSaved=d.json;hist=[JSON.stringify(P)];hi=0;updUndo();selScene=0;selEl=null;t=0;restoreIdbMedia();afterProjectChange();setSave('Salvo');var pid0=CURP;setTimeout(function(){if(pid0===CURP&&!PROJS.some(function(p){return p.id===CURP&&p.thumb}))writeIndex(true)},2500)}catch(x){setSave('Projeto salvo ilegível',true)}return}
   if(d.json===lastSaved)return;
   if(d.json===packProject(P)){lastSaved=d.json;setSave('Salvo');return}
@@ -268,6 +282,10 @@ function onRemoteProject(snap){
     hist=hist.slice(0,hi+1);hist.push(JSON.stringify(P));hi=hist.length-1;updUndo();afterProjectChange();setSave('Salvo');
     if(d.by&&d.by!==ME.id&&hist.length>1)toast('Atualizado por '+profName(d.by)+'.');
   }catch(x){}
+}
+function detectWrite(u){
+  var p=null;try{p=u.can?u.can('data.write'):(u.canEdit?u.canEdit():null)}catch(x){p=null}
+  Promise.resolve(p).then(function(v){if(v===false){CAN_WRITE=false;if(CAP.db&&!isLocalProj(CURP)){var s=$('#saveState');s.title='Você só pode ver este artefato. Se editar, as mudanças viram uma cópia local. '+LOCAL_MSG+'.'}}else if(v===true&&CAN_WRITE===null)CAN_WRITE=true},function(){});
 }
 function startDb(db){
   CAP.db=db;setSave('Conectando…');
@@ -345,13 +363,13 @@ function init(){
   requestAnimationFrame(tick);
   var cl=window.claude;
   if(cl&&cl.use){
-    cl.use('user').then(function(u){if(!u)return;CAP.user=u;return u.id().then(function(id){ME.id=id;roomPresence()})}).catch(function(){});
-    cl.use('db').then(function(db){if(db){try{localStorage.removeItem('motion-draft')}catch(x){}startDb(db)}else setSave(draft?'Rascunho local':'')}).catch(function(){});
+    cl.use('user').then(function(u){if(!u)return;CAP.user=u;detectWrite(u);return u.id().then(function(id){ME.id=id;roomPresence()})}).catch(function(){});
+    cl.use('db').then(function(db){if(db){try{localStorage.removeItem('motion-draft')}catch(x){}startDb(db)}else{firstLoad=false;setSave(draft?'Rascunho local':'')}}).catch(function(){firstLoad=false});
     cl.use('assets').then(function(a){if(a)CAP.assets=a}).catch(function(){});
     cl.use('downloads').then(function(d){if(d)CAP.downloads=d}).catch(function(){});
     cl.use('room').then(function(r){if(r)startRoom(r)}).catch(function(){});
     cl.use('sample').then(function(s){if(!s)return;CAP.sample=s;updateMode();s.limits().then(function(l){if(l&&l.images)$('#attBtn').hidden=false}).catch(function(){})}).catch(function(){});
-  }
+  }else firstLoad=false;
 }
 init();
 if(typeof window.__motionTest==='function')window.__motionTest({importFiles:importFiles,hfImportFiles:hfImportFiles,hfFindRoot:hfFindRoot,sniff:sniff,HTMLV:HTMLV,hfExport:hfExport,hfPatchedIndex:hfPatchedIndex,openHelp:openHelp,findEl:findEl,switchProject:switchProject,createProject:createProject,openProjects:openProjects,get CURP(){return CURP},get PROJS(){return PROJS},get lastHit(){return lastHit},get selEl(){return selEl},hitAll:hitAll,hitBox:hitBox,packProject:packProject,normProject:normProject,exportFrames:exportFramesMp4,analyzeRef:analyzeRef,timeCaptions:timeCaptions,chunkScript:chunkScript,parseSrt:parseSrt,toSrt:toSrt,allVoiceSegments:allVoiceSegments,renderAudioMix:renderAudioMix,capCfg:capCfg,openRefDialog:openRefDialog,setFormat:setFormat,openTweaks:openTweaks,openScenePop:openScenePop,get P(){return P},set P(v){P=v},get t(){return t},seek:seek,setTab:setTab,detectBeats:detectBeats,snapToBeats:snapToBeats,runChecks:runChecks,reflowProject:reflowProject,applyOps:applyOps,useTemplate:useTemplate,renderWith:renderWith,addEl:addEl,handlers:handlers,sendText:sendText,renderPanel:renderPanel,commit:commit,afterProjectChange:afterProjectChange,

@@ -5,7 +5,7 @@ function modal(html,wide){var d=$('#dlg');d.className='dlg'+(wide?' wide':'');d.
   d.querySelectorAll('[data-close]').forEach(function(b){b.onclick=closeModal})}
 function closeModal(){if(exporting)return;$('#modal').hidden=true;$('#dlg').innerHTML='';if(modalUrl){URL.revokeObjectURL(modalUrl);modalUrl=null}}
 var modalUrl=null,toastT=null;
-function toast(msg){var el=$('#toast');el.textContent=msg;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){el.hidden=true},3600)}
+function toast(msg,ms){var el=$('#toast');el.textContent=msg;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){el.hidden=true},ms||Math.max(3600,Math.min(10000,String(msg).length*60)))}
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!$('#modal').hidden)closeModal()});
 
 /* =========================================================

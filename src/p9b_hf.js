@@ -94,7 +94,8 @@ function hfImportFiles(files,root){
         var proj={name:A.title.slice(0,80),type:'edit',w:Math.min(2160,A.w),h:Math.min(2160,A.h),theme:{bg:'#000000',ink:'#ffffff',accent:'#F89833',on:'#000000'},themeName:'custom',
           scenes:[{name:A.title.slice(0,40),dur:dur,bg:'#000000',trans:'none',els:[htmlEl]}],audio:audio,media:media,markers:A.cenas.map(function(c){return {t:c.a,end:c.b,label:c.id}}),captions:{on:false,style:'pop',items:[]},duck:{on:false,amount:.7}};
         exporting=false;setProg(1,'Pronto.');
-        return createProject(proj).then(function(){closeModal();
+        return createProject(proj).then(function(newId){closeModal();
+          if(CAP.db&&/^l_/.test(String(newId||'')))warn.unshift('ok:'+LOCAL_MSG+'. O artefato não aceitou gravar o projeto, então ele foi salvo neste navegador e aberto assim mesmo.');
           var msg=[keys.length+' arquivos usados pela composição foram importados ('+fmtMB(tot)+'). '+A.audio.length+' faixa(s) de áudio, '+A.cenas.length+' cena(s), '+A.vars.length+' variável(is) e '+A.layers.length+' camada(s) nomeada(s).'];
           if(inIdb.length)warn.push('ok:'+inIdb.length+' arquivo(s) ficaram guardados no navegador (IndexedDB), porque o armazenamento do artefato não estava disponível. Eles reabrem neste navegador; em outro computador, importe a pasta de novo.');
           if(sess.length)warn.push(sess.length+' arquivo(s) ficaram só nesta sessão (sem espaço para salvar): '+sess.slice(0,6).join(', ')+(sess.length>6?'…':'')+'.');
@@ -104,7 +105,7 @@ function hfImportFiles(files,root){
         });
       });
     });
-  }).catch(function(e){exporting=false;exportFail({message:'Não consegui abrir a composição: '+(e.message||e)})});
+  }).catch(function(e){exporting=false;exportFail({message:'Não consegui abrir a composição: '+(e&&e.code&&String(e.message||'').indexOf('código:')<0?dbErr(e).text:((e&&e.message)||e))})});
 }
 /* SVG animado ou HTML solto como camada html de um arquivo só */
 function hfImportSingle(f,text,kind){
