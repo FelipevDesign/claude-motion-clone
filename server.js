@@ -5,7 +5,7 @@
    - exportações salvas em exports/
    - Claude via ANTHROPIC_API_KEY (API) ou pela CLI "claude" instalada (assinatura) */
 'use strict';
-const http=require('http'),fs=require('fs'),path=require('path'),crypto=require('crypto'),{spawn,execFile}=require('child_process');
+const http=require('http'),fs=require('fs'),path=require('path'),crypto=require('crypto'),{spawn,exec}=require('child_process');
 const ROOT=__dirname;
 loadEnv(path.join(ROOT,'.env'));
 const PORT=+process.env.PORT||4321;
@@ -48,7 +48,7 @@ const safeName=s=>String(s||'arquivo').replace(/[\\/:*?"<>|\x00-\x1f]+/g,'-').re
 
 /* ---------- Claude ---------- */
 let CLI=null;
-function detectCli(){return new Promise(ok=>{if(process.env.CLAUDE_CLI==='off')return ok(null);const cmd=process.env.CLAUDE_CLI||'claude';execFile(cmd,['--version'],{shell:true,timeout:15000},(e,out)=>ok(e?null:cmd))})}
+function detectCli(){return new Promise(ok=>{if(process.env.CLAUDE_CLI==='off')return ok(null);const cmd=process.env.CLAUDE_CLI||'claude';exec(JSON.stringify(cmd)+' --version',{timeout:15000,windowsHide:true},(e)=>ok(e?null:cmd))})}
 function provider(){return process.env.ANTHROPIC_API_KEY?'api':CLI?'cli':null}
 function toMessages(input){return typeof input==='string'?[{role:'user',content:input}]:input.map(m=>({role:m.role,content:String(m.content)}))}
 async function sampleApi(body,onDelta){
@@ -66,7 +66,7 @@ async function sampleApi(body,onDelta){
 function sampleCli(body,onDelta){return new Promise((ok,bad)=>{
   const msgs=toMessages(body.input);const prompt=msgs.length===1?msgs[0].content:msgs.map(m=>(m.role==='user'?'Pessoa: ':'Claude: ')+m.content).join('\n\n');
   const args=['-p','--output-format','text'];const model=body.model||(body.modelTier==='quick'?'haiku':body.modelTier==='complex'?'opus':'sonnet');if(model)args.push('--model',model);
-  const p=spawn(CLI,args,{shell:true,windowsHide:true});let out='',err='';
+  const p=spawn(JSON.stringify(CLI)+' '+args.join(' '),{shell:true,windowsHide:true});let out='',err='';
   p.stdout.on('data',d=>{const s=d.toString('utf8');out+=s;onDelta(s,out)});p.stderr.on('data',d=>err+=d.toString());
   p.on('close',c=>{if(c===0)ok({text:out.trim(),truncated:false,model:'claude-cli'});else{const e=new Error(err.slice(0,400)||'falha na CLI');e.code='api_error';bad(e)}});
   if(body.signal)body.signal.addEventListener('abort',()=>{try{p.kill()}catch(e){}});
