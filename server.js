@@ -19,7 +19,7 @@ const MODELS={quick:process.env.MODEL_QUICK||'claude-haiku-5-5',default:process.
 
 function loadEnv(f){try{fs.readFileSync(f,'utf8').split(/\r?\n/).forEach(l=>{const m=/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(l);if(m&&!(m[1] in process.env))process.env[m[1]]=m[2].replace(/^["']|["']$/g,'')})}catch(e){}}
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.mp4':'video/mp4','.webm':'video/webm','.mov':'video/quicktime','.mp3':'audio/mpeg','.wav':'audio/wav','.m4a':'audio/mp4','.ogg':'audio/ogg','.glb':'model/gltf-binary','.woff2':'font/woff2','.ttf':'font/ttf','.otf':'font/otf','.txt':'text/plain'};
-const NM={three:'three',"mp4-muxer":'mp4-muxer',jszip:'jszip',gifenc:'gifenc','lottie-web':'lottie-web'};
+const NM={three:'three',"mp4-muxer":'mp4-muxer',jszip:'jszip',gifenc:'gifenc','lottie-web':'lottie-web',heic2any:'heic2any','ag-psd':'ag-psd',xlsx:'xlsx'};
 
 /* ---------- banco de documentos ---------- */
 const okSeg=s=>/^[A-Za-z0-9_\-.~:@+]{1,200}$/.test(s)&&s!=='.'&&s!=='..';
@@ -81,7 +81,7 @@ const server=http.createServer(async(req,res)=>{
     if(p==='/shim.js')return serveFile(req,res,path.join(ROOT,'public','shim.js'));
     if(p.startsWith('/nm/')){const segs=p.slice(4).split('/');const pkg=NM[segs[0]];if(!pkg||segs.some(s=>s==='..'))return send(res,404,{});return serveFile(req,res,path.join(ROOT,'node_modules',pkg,...segs.slice(1)))}
     if(p.startsWith('/_blob/')){const id=p.slice(7);if(!/^[a-f0-9]{8,64}$/.test(id))return send(res,404,{});let meta={};try{meta=JSON.parse(fs.readFileSync(path.join(MEDIA,id+'.json'),'utf8'))}catch(e){}return serveFile(req,res,path.join(MEDIA,id),meta.type)}
-    if(p==='/api/info')return send(res,200,{local:true,provider:provider(),images:provider()==='api',version:1,exports:EXPORTS,data:DATA});
+    if(p==='/api/info')return send(res,200,{local:true,ffmpeg:true,provider:provider(),images:provider()==='api',version:1,exports:EXPORTS,data:DATA});
     if(p==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store',Connection:'keep-alive'});res.write(': ok\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return}
     if(p==='/api/db/doc'){const dp=u.searchParams.get('path');
       if(req.method==='GET'){const d=readDoc(dp);return send(res,200,d===undefined?{exists:false}:{exists:true,data:d})}
@@ -100,7 +100,15 @@ const server=http.createServer(async(req,res)=>{
       let name=safeName(decodeURIComponent(String(req.headers['x-name']||'arquivo'))),f=path.join(EXPORTS,name),k=1;const ext=path.extname(name),base=name.slice(0,name.length-ext.length);
       while(fs.existsSync(f)){f=path.join(EXPORTS,base+' ('+(k++)+')'+ext)}
       const out=fs.createWriteStream(f);req.pipe(out);out.on('finish',()=>send(res,200,{status:'delivered',path:f}));out.on('error',e=>send(res,500,{code:'io_error',message:e.message}));return}
-    if(p==='/api/open'&&req.method==='POST'){const which=u.searchParams.get('dir')==='media'?MEDIA:EXPORTS;const cmd=process.platform==='win32'?'explorer':process.platform==='darwin'?'open':'xdg-open';spawn(cmd,[which],{detached:true,stdio:'ignore'}).unref();return send(res,200,{ok:true})}
+    if(p==='/api/convert'&&req.method==='POST'){
+      const to=String(u.searchParams.get('to')||'mp4').replace(/[^a-z0-9]/g,''),ARGS={mp4:['-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart'],m4a:['-vn','-c:a','aac','-b:a','256k'],mp3:['-vn','-c:a','libmp3lame','-b:a','256k'],png:['-frames:v','1'],wav:['-vn','-c:a','pcm_s16le']};
+      if(!ARGS[to])return send(res,400,{code:'bad_format',message:'Formato de saída não suportado.'});
+      const tmp=path.join(require('os').tmpdir(),'cmc_'+crypto.randomBytes(6).toString('hex')),inp=tmp+'_in'+path.extname(safeName(decodeURIComponent(String(req.headers['x-name']||'')))),out=tmp+'_out.'+to;
+      const ws=fs.createWriteStream(inp);req.pipe(ws);ws.on('finish',()=>{const pr=spawn(process.env.FFMPEG||'ffmpeg',['-y','-hide_banner','-loglevel','error','-i',inp,...ARGS[to],out],{windowsHide:true});let err='';pr.stderr.on('data',d=>err+=d);
+        pr.on('error',()=>{try{fs.unlinkSync(inp)}catch(e){}send(res,500,{code:'no_ffmpeg',message:'ffmpeg não encontrado no PC. Instale o ffmpeg ou defina FFMPEG no .env.'})});
+        pr.on('close',c=>{try{fs.unlinkSync(inp)}catch(e){}if(c!==0){try{fs.unlinkSync(out)}catch(e){}return send(res,500,{code:'convert_failed',message:err.slice(0,300)||'Falha na conversão'})}
+          res.writeHead(200,{'Content-Type':TYPES['.'+to]||'application/octet-stream'});const rs=fs.createReadStream(out);rs.pipe(res);rs.on('close',()=>{try{fs.unlinkSync(out)}catch(e){}})})});return}
+{const which=u.searchParams.get('dir')==='media'?MEDIA:EXPORTS;const cmd=process.platform==='win32'?'explorer':process.platform==='darwin'?'open':'xdg-open';spawn(cmd,[which],{detached:true,stdio:'ignore'}).unref();return send(res,200,{ok:true})}
     if(p==='/api/sample'&&req.method==='POST'){
       const body=JSON.parse((await readBody(req)).toString('utf8'));const prov=provider();if(!prov)return send(res,400,{code:'sampling_disabled',message:'Configure ANTHROPIC_API_KEY no arquivo .env ou instale a CLI do Claude Code.'});
       res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});const ac=new AbortController();body.signal=ac.signal;res.on('close',()=>{if(!res.writableEnded)ac.abort()});

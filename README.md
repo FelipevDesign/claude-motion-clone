@@ -14,6 +14,14 @@ Sem limite de tamanho de mídia: imagens, vídeos, áudios e modelos 3D ficam em
 - `npm run dev` — modo desenvolvimento: refaz o app ao salvar arquivos em `src/` e reinicia o servidor quando `server.js` muda.
 - `npm run build` — gera `public/index.html` a partir de `src/`.
 
+## Abrir uma composição HyperFrames (HTML + GSAP)
+1. Na barra do palco, clique em **Mídia → Abrir pasta** (ou no menu do título: **Abrir pasta ou ZIP**) e escolha a pasta que tem o `index.html`. Também dá para arrastar a pasta ou um `.zip` dela para o palco.
+2. O editor importa só os arquivos que o `index.html` usa (ignora renders, análises e backups) e cria um projeto novo com a composição como camada, as faixas `<audio>` na linha do tempo e as cenas `cena(...)` como marcadores.
+3. Selecione a camada para ver variáveis, faixas de áudio, camadas da composição e o botão **Exportar composição (.zip)**.
+
+## Formatos
+Veja a lista completa em **Ajuda → Formatos suportados** dentro do app. No web app, vídeos que o navegador não toca (MKV, AVI…) são convertidos pelo ffmpeg do PC.
+
 ## Projetos de exemplo
 Na primeira execução, os projetos da pasta `examples` (Guia completo, Tour, Reel · Comover e Resumo do 3º trimestre) são copiados para `data`. Depois disso, `data` é só sua.
 

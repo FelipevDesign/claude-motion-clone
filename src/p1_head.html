@@ -413,6 +413,20 @@ svg.i{width:16px;height:16px;flex:none}
 .pthumb img{width:100%;height:100%;object-fit:contain;display:block}.pthumb .badge{position:absolute;left:8px;top:8px;font:600 11px var(--font-ui);font-style:normal;background:var(--fg);color:var(--bg);padding:2px 8px;border-radius:99px}
 .pinfo{padding:8px 10px 2px;display:flex;flex-direction:column;gap:2px;min-width:0}.pinfo b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pinfo span{font-size:11.5px;color:var(--muted)}
 .pacts{display:flex;justify-content:flex-end;gap:2px;padding:0 6px 6px}.pacts .ghost{height:28px;min-width:28px;font-size:12px}.pacts .danger{color:#e5484d;font-weight:600;padding:0 8px}
+.htmllayer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.hfframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0;background:transparent;pointer-events:none}
+.cvtop{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.stage .ov{z-index:3}
+.mpin{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--kf,#F89833);opacity:.7;pointer-events:none}
+.mpin b{position:absolute;top:1px;left:3px;font:600 9px var(--font-ui);color:var(--muted);white-space:nowrap}
+.ilist{margin:6px 0 12px;padding-left:18px;font-size:13px;line-height:1.5}.ilist.ok li::marker{color:#1F9D6B}
+.htable{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0}.htable th,.htable td{text-align:left;vertical-align:top;padding:7px 8px;border-bottom:1px solid var(--line)}.htable th{color:var(--muted);font-weight:600}
+.helptabs{margin:2px 0 10px}#helpBody{max-height:62vh;overflow:auto}
+.hfexp{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 12px;background:var(--panel2)}.hfexp .info{margin:0 0 8px}
+.meter{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:6px 0}.meter i{display:block;height:100%;background:var(--fg)}
+.hfscenes{display:flex;flex-wrap:wrap;gap:4px}.hfscenes .chip{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:3px 7px;font-size:12px;cursor:pointer;color:var(--fg)}.hfscenes .chip i{font-style:normal;color:var(--muted);font-size:11px}
+.hftrack{display:grid;grid-template-columns:1fr 90px;gap:6px;align-items:center;margin-bottom:4px}
+.hflayers{display:flex;flex-direction:column;gap:2px;max-height:260px;overflow:auto}.hfl{display:flex;gap:6px;align-items:center;border:0;background:none;color:var(--fg);text-align:left;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}.hfl:hover{background:var(--panel2)}.hfl.off{color:var(--muted)}.hfl svg{width:13px;height:13px;flex:none}
 textarea.code{width:100%;font:12px/1.5 'JetBrains Mono',monospace;background:var(--soft);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;tab-size:2;white-space:pre}
 </style>
 
@@ -538,7 +552,7 @@ textarea.code{width:100%;font:12px/1.5 'JetBrains Mono',monospace;background:var
         <div class="pop" id="moreMenu" hidden style="right:36px;top:42px;width:210px"></div>
       </aside>
     </div>
-    <input type="file" id="mediaFile" accept="image/*,video/*,audio/*,.svg,.json,.glb,.gltf" multiple hidden>
+    <input type="file" id="mediaFile"  multiple hidden>
     <input type="file" id="replFile" accept="image/*,video/*" hidden>
     <input type="file" id="fontFile" accept=".woff2,.woff,.ttf,.otf" hidden>
     <input type="file" id="logoFile" accept="image/*" hidden>

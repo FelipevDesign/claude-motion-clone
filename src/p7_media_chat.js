@@ -25,6 +25,7 @@ function storeFile(f,kind){
   var finish=function(src,enc,persisted){var id=src.slice(src.indexOf(':')+1);LOCAL[id]=local;return {src:src,enc:enc||'',persisted:persisted}};
   if(!CAP.assets)return Promise.resolve(finish('local:'+nid('m'),'',false));
   if(window.__LOCAL_APP){var ty=f.type||(kind==='model'?'model/gltf-binary':kind==='lottie'?'application/json':kind==='svg'?'image/svg+xml':'application/octet-stream');return CAP.assets.upload(f,{type:ty}).then(function(r){return finish('asset:'+r.id,'',true)}).catch(function(e){toast('Não foi possível salvar o arquivo no PC: '+((e&&e.message)||''));return finish('local:'+nid('m'),'',false)})}
+  if(kind==='audio'&&/^video\/(mp4|webm)$/.test(f.type)&&f.size<=ASSET_MAX){return CAP.assets.upload(f,{type:f.type}).then(function(r){return finish('asset:'+r.id,'',true)}).catch(function(e){uploadErr(e);return finish('local:'+nid('m'),'',false)})}
   if(kind==='audio'||kind==='model'){
     return readDataURL(f).then(function(du){var blob=new Blob([du],{type:'text/plain'});if(blob.size>MAX_UP)return finish('local:'+nid('m'),'',false);
       return CAP.assets.upload(blob,{type:'text/plain'}).then(function(r){return finish('asset:'+r.id,'b64',true)})}).catch(function(e){uploadErr(e);return finish('local:'+nid('m'),'',false)});
@@ -80,9 +81,9 @@ function addFiles(files,opts){
   files.sort(function(a,b){return a.name.localeCompare(b.name,undefined,{numeric:true})});
   toast(files.length>1?'Enviando '+files.length+' arquivos…':'Enviando '+files[0].name+'…');
   var chain=Promise.resolve(),added=[],placed=0,seqs={},named=files.some(function(f){return parseName(f.name).scene!=null});
-  files.forEach(function(f){chain=chain.then(function(){var kind=kindOf(f);return storeFile(f,kind).then(function(st){
+  files.forEach(function(f){chain=chain.then(function(){var kind=f.__audio?'audio':kindOf(f);return storeFile(f,kind).then(function(st){
     return probe(kind==='svg'?'image':kind==='model'?'none':kind,LOCAL[st.src.slice(st.src.indexOf(':')+1)]).then(function(meta){
-      var m={id:nid('m'),kind:kind,name:f.name.replace(/\.[^.]+$/,'').slice(0,40),src:st.src,enc:st.enc,w:meta.w||0,h:meta.h||0,dur:meta.dur||0,saved:st.persisted};
+      var m={id:nid('m'),kind:kind,name:f.name.replace(/\.[^.]+$/,'').slice(0,40),src:st.src,enc:st.enc,w:meta.w||0,h:meta.h||0,dur:meta.dur||0,saved:st.persisted,size:f.size};if(f.__orig){m.proxy=true;m.orig=f.__orig}
       P.media.push(m);added.push(m);
       if(kind==='audio'){
         var tr={id:nid('a'),name:m.name,src:m.src,enc:m.enc,start:0,offset:0,vol:.8,fadeIn:.5,fadeOut:1.5,bpm:0,beats:[],role:/voz|locucao|narra|voice/.test(norm(m.name))?'voice':'music'};P.audio.push(tr);selTrack=tr.id;selEl=null;
@@ -97,6 +98,7 @@ function addFiles(files,opts){
       if(kind==='model'){var sc3=P.scenes[selScene],w3=Math.round(Math.min(PW,PH)*.7),e3=el('three',{mode:'model',src:m.src,name:m.name,x:Math.round(PW/2-w3/2),y:Math.round(PH/2-w3/2),w:w3,h:w3});sc3.els.push(e3);selEl=e3.id;selTrack=null;showEl(e3);placed++;return}
       var info=named||files.length>1?parseName(f.name):null;
       if(info&&info.seq&&kind==='image'&&files.filter(function(x){var o=parseName(x.name);return o.seq&&o.seq.key===info.seq.key}).length>1){var g=seqs[info.seq.key]||(seqs[info.seq.key]={info:info,items:[]});g.items.push({n:info.seq.n,src:m.src,w:m.w,h:m.h,name:m.name});return}
+      if(f.__sprite&&kind==='image'){placeAsset(m,{role:'sprite',grid:null},P.scenes[selScene],files.length>1);placed++;return}
       var si=info&&info.scene?info.scene-1:selScene;while(si>=P.scenes.length){P.scenes.push(normScene({name:'Cena '+(P.scenes.length+1),dur:4,els:[]},P.scenes.length))}
       if(kind==='image'&&(!info||!info.role||info.role==='bg')){var slot=P.scenes[si].els.filter(function(x){return x.slot&&!x.src})[0];if(slot){slot.src=m.src;placed++;return}}
       placeAsset(m,info,P.scenes[si],files.length>1);placed++;
@@ -113,7 +115,7 @@ function insertMedia(m,noCommit){
   if(m.kind==='audio'){if(!P.audio.some(function(a){return a.src===m.src})){P.audio.push({id:nid('a'),name:m.name,src:m.src,enc:m.enc,start:0,offset:0,vol:.8,fadeIn:.5,fadeOut:1.5,bpm:0,beats:[]});loadAllAudio()}if(!noCommit){commit();fullRender()}return}
   placeAsset(m,null,curScene());if(!noCommit){commit();fullRender()}
 }
-$('#mediaFile').addEventListener('change',function(){addFiles(this.files,{libraryOnly:mediaMode==='library'});closeMediaPop()});
+$('#mediaFile').addEventListener('change',function(){importFiles(this.files,{libraryOnly:mediaMode==='library'});closeMediaPop()});
 $('#replFile').addEventListener('change',function(){addFiles(this.files,{replace:true});this.accept='image/*,video/*'});
 $('#fontFile').addEventListener('change',function(){
   var f=this.files&&this.files[0];if(!f)return;var ext=(f.name.split('.').pop()||'').toLowerCase(),type={woff2:'font/woff2',woff:'font/woff',ttf:'font/ttf',otf:'font/otf'}[ext];
@@ -127,12 +129,12 @@ $('#logoFile').addEventListener('change',function(){
   var f=this.files&&this.files[0];if(!f)return;storeFile(f,'image').then(function(st){P.brand.logo=st.src;P.brand.logoOn=true;commit();renderPanel();draw();toast('Logo aplicado em todas as cenas.')});
 });
 /* arrastar arquivos para o palco */
-['dragover','drop'].forEach(function(evn){stage.addEventListener(evn,function(e){e.preventDefault();if(evn==='drop'&&e.dataTransfer&&e.dataTransfer.files.length)addFiles(e.dataTransfer.files)})});
+['dragover','drop'].forEach(function(evn){stage.addEventListener(evn,function(e){e.preventDefault();if(evn==='drop'&&e.dataTransfer&&(e.dataTransfer.files.length||e.dataTransfer.items.length))collectDrop(e.dataTransfer).then(function(list){importFiles(list)})})});
 
 var mediaMode='insert';
 function openMediaPop(mode){
   mediaMode=mode||'insert';var pop=$('#mediaPop'),h='<h4>Biblioteca de mídia</h4>';
-  h+='<div class="btnrow"><button class="btn sm accent" data-mact="up">'+IC.plus+'Enviar imagem, vídeo ou áudio</button></div>';
+  h+='<div class="btnrow"><button class="btn sm accent" data-mact="up">'+IC.plus+'Enviar arquivos</button><button class="btn sm" data-mact="folder">'+IC.folder+'Abrir pasta</button></div><p class="note">Pasta ou ZIP HyperFrames, Lottie, PSD, HEIC, 3D, fontes, legendas, planilhas e mais. <button class="linkbtn" data-mact="help">Ver formatos</button></p>';
   var list=P.media.filter(function(m){return mediaMode!=='replace'||(findEl(selEl)&&findEl(selEl).kind===m.kind)});
   if(list.length){h+='<div class="lib">'+list.map(function(m){var u=srcURL(m.src);return '<button data-mid="'+esc(m.id)+'" title="'+esc(m.name)+'">'+(m.kind==='image'&&u?'<img src="'+esc(u)+'" alt="">':m.kind==='video'&&u?'<video src="'+esc(u)+'#t=0.5" muted preload="metadata"></video>':IC[m.kind])+'<span>'+(m.kind==='audio'?'♪ ':'')+esc(m.name)+'</span></button>'}).join('')+'</div>'}
   else h+='<p class="note">Nenhuma mídia ainda. Você também pode arrastar arquivos para o palco.</p>';
@@ -144,6 +146,8 @@ $('#mediaBtn').addEventListener('click',function(e){e.stopPropagation();if(!$('#
 $('#mediaPop').addEventListener('click',function(e){
   e.stopPropagation();var b=e.target.closest('[data-mact],[data-mid]');if(!b)return;
   if(b.dataset.mact==='up'){$('#mediaFile').value='';$('#mediaFile').click();return}
+  if(b.dataset.mact==='folder'){closeMediaPop();pickFolder();return}
+  if(b.dataset.mact==='help'){closeMediaPop();openHelp('formats');return}
   var m=P.media.filter(function(x){return x.id===b.dataset.mid})[0];if(!m)return;
   if(mediaMode==='replace'){var el0=findEl(selEl);if(el0){el0.src=m.src;if(m.w&&m.h)el0.h=Math.round(el0.w*m.h/m.w);commit();fullRender()}}
   else insertMedia(m);
@@ -257,6 +261,7 @@ var RULES=['Você é o motor de edição do Claude Motion, um app que cria anima
 '- shape: shape "poly" (sides), "star" (points, inner), "morph" (forms "square,triangle,hexagon,star,circle" ou também pentagon, octagon, diamond, star6, burst, cross, blob; keyframes em morph de 0 a n-1; wobble 0..2 ondula; round arredonda cantos), "dial" (mostrador com ticks), "arc" (prog 0..1, strokeW, spin), "ring" (dash, gap, spin).',
 '- "particles": mode "burst"|"confetti"|"float"|"sphere" (esfera de pontos girando); count, seed, colors [cores], shapes ["circle","ring","square","tri","cross","plus","line","dot"], size, speed, gravity, drag, spin, life, delay, spread (graus), dir, streak (rastro), tilt. A caixa define a área e o centro da explosão; start define o momento da explosão.',
 '- "pattern": mode "memphis" (peças geométricas coloridas; cols, colors, bg2, swap = girar peças a cada N s), "dots" (gap, dot, twinkle), "grid". prog 0..1 revela do ponto ox,oy (0..1).',
+'- "html": composição HTML importada (HyperFrames: HTML + GSAP). Não reescreva comp.files nem o HTML. Você pode mudar x, y, w, h, start, dur, offset (deslocar o tempo da composição), opacity, comp.values (variáveis da composição pelo id) e comp.hidden ({id da camada: true} oculta). As faixas de áudio da composição estão em audio[] com hfId: ajuste vol, start, dur e muted (true desliga).',
 '- Qualquer elemento com fixed:true fica preso à tela (ignora câmera, parallax e tremor); use em HUD, logos e títulos fixos.',
 '- "hud": moldura técnica com cantoneiras, text1 (topo), text2 (base), contador de quadros e timecode automáticos. Ocupe a tela toda e deixe por cima.',
 '- Cena: trans "iris" (círculo com anéis, cores em tcol), "bars" (barras coloridas em tcol), "flash"; fx.shake (px) com fx.hits [tempos dos impactos na cena] treme a câmera.',

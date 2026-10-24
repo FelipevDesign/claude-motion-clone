@@ -82,9 +82,11 @@ var IC={
   particles:ic('<circle cx="6" cy="7" r="1.6"/><circle cx="17" cy="5" r="1.2"/><circle cx="12" cy="12" r="2"/><circle cx="5" cy="17" r="1.2"/><circle cx="18" cy="17" r="1.6"/>'),
   pattern:ic('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12a9 9 0 0 1 9-9M12 21a9 9 0 0 1 9-9"/><circle cx="16" cy="8" r="1.5"/><circle cx="8" cy="16" r="1.5"/>'),
   hud:ic('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
+  html:ic('<path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14"/>'),
+  help:ic('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.4M12 17h.01"/>'),
   users:ic('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>')
 };
-var KNAME={text:'Texto',shape:'Forma',image:'Imagem',video:'Vídeo',chart:'Gráfico',counter:'Contador',sprite:'Sprite',svg:'Vetor (SVG)',lottie:'Lottie',shader:'Shader',three:'3D',particles:'Partículas',pattern:'Padrão',hud:'HUD'};
+var KNAME={text:'Texto',shape:'Forma',image:'Imagem',video:'Vídeo',chart:'Gráfico',counter:'Contador',sprite:'Sprite',svg:'Vetor (SVG)',lottie:'Lottie',shader:'Shader',three:'3D',particles:'Partículas',pattern:'Padrão',hud:'HUD',html:'Composição HTML'};
 
 /* =========================================================
    Curvas de aceleração (incluindo bézier personalizada)
@@ -181,6 +183,7 @@ var KD={
   particles:{w:1280,h:720,x:0,y:0,mode:'burst',count:90,seed:1,colors:['@accent','@ink','#F5D03B','#2CE0C4'],shapes:['circle','square','tri','ring','cross'],size:14,speed:1,gravity:0,drag:2.2,spin:2,life:2.4,delay:0,spread:360,dir:0,streak:true,tilt:18,anim:{in:'none'}},
   pattern:{w:1280,h:720,x:0,y:0,mode:'memphis',cols:14,seed:3,colors:['@accent','#F5D03B','#2CE0C4','#5B3BF5','#111111'],bg2:'',prog:1,swap:0,gap:32,dot:1.6,twinkle:false,ox:.5,oy:.5,anim:{in:'none'}},
   hud:{w:1280,h:720,x:0,y:0,color:'@ink',text1:'CLAUDE MOTION / 2026',text2:'',text3:'',fps:30,anim:{in:'fade'}},
+  html:{w:1280,h:720,x:0,y:0,comp:null,offset:0,anim:{in:'none'}},
   counter:{w:700,h:0,from:0,to:100,decimals:0,prefix:'',suffix:'',size:160,font:'display',weight:500,color:'@ink',align:'left',anim:{in:'grow',t:1.6,ease:'outq'}}
 };
 function el(kind,o){
@@ -219,7 +222,7 @@ function defCam(){return {on:false,z0:1,x0:.5,y0:.5,z1:1.12,x1:.5,y1:.5,ease:'in
 function scene(name,dur,els,o){return Object.assign({id:nid('s'),name:name,dur:dur,bg:'@bg',trans:'wipe',cam:defCam(),els:els},o||{})}
 function normScene(s,i){
   s=isObj(s)?s:{};
-  var r={id:(typeof s.id==='string'&&s.id)?s.id:nid('s'),name:String(s.name||('Cena '+(i+1))),dur:clamp(+s.dur||5,.5,120),bg:s.bg||'@bg',
+  var r={id:(typeof s.id==='string'&&s.id)?s.id:nid('s'),name:String(s.name||('Cena '+(i+1))),dur:clamp(+s.dur||5,.5,3600),bg:s.bg||'@bg',
     notes:String(s.notes||''),par:Object.assign({on:false,x:120,y:0,z:.08,ease:'inout'},isObj(s.par)?s.par:{}),fx:Object.assign({grain:0,vignette:0},isObj(s.fx)?s.fx:{}),trans:['wipe','fade','slide','magic','none','sh-noise','sh-pixel','sh-radial','sh-zoom','sh-glitch','iris','bars','flash'].indexOf(s.trans)>=0?s.trans:'wipe',cam:Object.assign(defCam(),isObj(s.cam)?s.cam:{}),els:[]};
   ['z0','x0','y0','z1','x1','y1'].forEach(function(k){r.cam[k]=+r.cam[k];if(!isFinite(r.cam[k]))r.cam[k]=defCam()[k]});
   r.cam.on=!!r.cam.on;
@@ -248,6 +251,7 @@ function normProject(o){
     ai:isObj(o.ai)?o.ai:{},
     media:Array.isArray(o.media)?o.media.filter(function(m){return m&&m.id&&m.src}):[],
     audio:Array.isArray(o.audio)?o.audio.filter(function(a){return a&&a.src}).map(function(a){var r=Object.assign({id:nid('a'),name:'Trilha',start:0,offset:0,vol:.8,fadeIn:.5,fadeOut:1.5,enc:'',bpm:0,beats:[],role:'music'},a);if(['music','voice','sfx'].indexOf(r.role)<0)r.role='music';return r}):[],
+    markers:Array.isArray(o.markers)?o.markers.filter(function(m){return m&&isFinite(+m.t)}).slice(0,300):[],
     captions:isObj(o.captions)?o.captions:{on:true,style:'pop',items:[]},duck:isObj(o.duck)?o.duck:{on:true,amount:.7},refGhost:!!o.refGhost,refInfo:isObj(o.refInfo)?o.refInfo:null,
     scenes:(Array.isArray(o.scenes)?o.scenes:[]).map(normScene)};
   if(!isObj(p.fonts.custom))p.fonts.custom={};

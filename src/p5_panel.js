@@ -42,6 +42,7 @@ var FK={
   particles:[{p:'mode',l:'Modo',t:'sel',o:[['burst','Explosão'],['confetti','Confete'],['float','Flutuando'],['sphere','Esfera de pontos']]},{p:'count',l:'Quantidade',t:'num',half:1},{p:'seed',l:'Semente',t:'num',half:1},{p:'size',l:'Tamanho',t:'num',half:1},{p:'speed',l:'Velocidade',t:'num',step:.1,half:1},{p:'gravity',l:'Gravidade',t:'num',step:.1,half:1},{p:'life',l:'Vida (s)',t:'num',step:.1,half:1},{p:'spin',l:'Giro',t:'num',step:.1,half:1},{p:'delay',l:'Espalhar no tempo (s)',t:'num',step:.1,half:1},{p:'streak',l:'Rastro de velocidade',t:'check'}],
   pattern:[{p:'mode',l:'Modo',t:'sel',o:[['memphis','Memphis (formas)'],['dots','Grade de pontos'],['grid','Grade de linhas']]},{p:'cols',l:'Colunas',t:'num',half:1},{p:'seed',l:'Semente',t:'num',half:1},{p:'swap',l:'Girar peças a cada (s)',t:'num',step:.1,half:1},{p:'gap',l:'Espaço dos pontos',t:'num',half:1},{p:'bg2',l:'Fundo',t:'color',none:1},{p:'twinkle',l:'Pontos cintilando',t:'check'}],
   hud:[{p:'text1',l:'Rótulo superior',t:'text'},{p:'text2',l:'Rótulo inferior',t:'text'},{p:'text3',l:'Canto superior direito (vazio = contador de quadros)',t:'text'},{p:'color',l:'Cor',t:'color'}],
+  html:[],
   counter:[{p:'prefix',l:'Prefixo',t:'text',half:1},{p:'suffix',l:'Sufixo',t:'text',half:1},{p:'from',l:'De',t:'text',half:1},{p:'to',l:'Até (número ou {{chave}})',t:'text',half:1},{p:'decimals',l:'Casas decimais',t:'num',half:1},{p:'size',l:'Tamanho',t:'num',half:1},{p:'font',l:'Fonte',t:'sel',o:OPT_FONT,half:1},{p:'align',l:'Alinhamento',t:'sel',o:OPT_ALIGN,half:1},{p:'color',l:'Cor',t:'color'}]
 };
 var ANIM_COMMON=[['none','Nenhuma'],['fade','Aparecer'],['rise','Subir'],['drop','Descer'],['left','Vir da esquerda'],['right','Vir da direita'],['scale','Escala'],['pop','Pular (impulso)'],['blur','Desfocado para nítido'],['wipe','Revelar']];
@@ -118,6 +119,8 @@ function panelTweaks(pane){
   if(tr){
     h+='<div class="sh" style="margin-top:18px"><span class="kind">'+IC.audio+'Trilha sonora</span><button class="linkbtn" data-act="desel">Fechar</button></div>';
     h+=fld({p:'name',l:'Nome',t:'text'},'track');
+    h+='<label class="chk"><input type="checkbox" data-act="trmute"'+(tr.muted?'':' checked')+'> Faixa ligada</label>';
+    if(tr.hfId||+tr.dur>0)h+=fld({p:'dur',l:'Duração usada (s, 0 = inteira)',t:'num',step:.1},'track');
     h+='<div class="f"><span>Função</span><div class="presets">'+[['music','Música'],['voice','Voz / locução'],['sfx','Efeito sonoro']].map(function(x){return '<button data-act="trrole" data-v="'+x[0]+'" aria-pressed="'+((tr.role||'music')===x[0])+'">'+x[1]+'</button>'}).join('')+'</div></div>';
     if(P.audio.some(function(a){return a.role==='voice'})){var dk=duckCfg();h+='<label class="chk"><input type="checkbox" data-o="proj" data-p="duck.on"'+(dk.on?' checked':'')+'> Abaixar a música quando houver voz</label>'+(dk.on?fld({p:'duck.amount',l:'Quanto abaixar',t:'range',min:0,max:1,step:.05,fmt:function(v){return Math.round(v*100)+'%'}},'proj'):'')}
     h+='<div class="two">'+fld({p:'start',l:'Começa em (s)',t:'num',step:.1},'track')+fld({p:'offset',l:'Pular início do áudio (s)',t:'num',step:.1},'track')+'</div>';
@@ -133,6 +136,7 @@ function panelTweaks(pane){
     h+='<label class="f"><span>Nome da camada</span><input type="text" data-o="el" data-p="name" value="'+esc(e.name)+'" placeholder="'+esc(elName(e))+'"></label><p class="info" style="margin-top:-4px">Use o mesmo nome numa camada da cena seguinte para ativar o Magic Move.</p>';
     h+=group(FK[e.kind],'el');
     if(e.kind==='chart')h+=chartRows(e);
+    if(e.kind==='html')h+=htmlExtras(e);
     if(e.kind==='shader')h+=shaderExtras(e);
     if(e.kind==='three')h+=threeExtras(e);
     if(['image','video','sprite','svg','lottie'].indexOf(e.kind)>=0)h+='<div class="btnrow"><button class="btn sm" data-act="repl">'+(e.src||(e.frames&&e.frames.length)?'Trocar arquivo':'Escolher arquivo')+'</button><button class="btn sm" data-act="libpick">Da biblioteca</button></div>'+(e.kind==='sprite'&&e.frames&&e.frames.length?'<p class="info">Sequência de '+e.frames.length+' quadros.</p>':'')+(e.kind==='sprite'&&!(e.frames&&e.frames.length)?'<p class="info">Aceita folha de sprites (informe colunas e linhas), GIF ou WebP animado. Para sequência, envie vários PNGs com o mesmo nome e números (ex.: corrida_01.png, corrida_02.png).</p>':'');
@@ -225,6 +229,7 @@ var handlers={
   addrow:function(b,e){if(!e)return;e.data.push({label:'Novo',value:1});showEl(e);commit();renderPanel();touch()},
   rmrow:function(b,e,sc,i){if(!e)return;if(e.data.length>1){e.data.splice(i,1);commit();renderPanel();touch()}else toast('Mantenha pelo menos uma linha.')},
   chartpaste:function(b,e){if(!e)return;openPasteDialog('chart')},
+  trmute:function(b){var tr=trackById(selTrack);if(!tr)return;tr.muted=!b.checked;commit();renderAudioLane();if(playing)aeStart(t)},
   trrole:function(b){var tr=trackById(selTrack);if(!tr)return;tr.role=b.dataset.v;if(AE.segs)AE.segs={};commit();renderPanel();renderAudioLane();if(playing)aeStart(t)},
   refghost:function(){P.refGhost=!P.refGhost;commit();renderPanel();draw()},
   refvid:function(){openRefDialog()},
@@ -360,7 +365,7 @@ function setFormat(k){var f=FORMATS[k];if(!f||(f[0]===P.w&&f[1]===P.h))return;re
 
 /* ---------- Tweaks: navegação, velocidade, palavras na tela ---------- */
 function speedScene(sc,f){
-  var nd=clamp(Math.round(sc.dur*f*10)/10,.5,120),k=nd/sc.dur;sc.dur=nd;
+  var nd=clamp(Math.round(sc.dur*f*10)/10,.5,3600),k=nd/sc.dur;sc.dur=nd;
   sc.els.forEach(function(e){e.start=Math.round((+e.start||0)*k*100)/100;if(e.dur>0)e.dur=Math.round(e.dur*k*100)/100;e.anim.t=Math.max(.05,Math.round(e.anim.t*k*100)/100);
     if(e.kf)for(var p in e.kf)e.kf[p].forEach(function(q){q.t=Math.round(q.t*k*100)/100})});
 }
@@ -391,7 +396,7 @@ function openScenePop(i){
 var spDel=false;
 $('#scenePop').addEventListener('pointerdown',function(e){e.stopPropagation()});
 $('#scenePop').addEventListener('input',function(ev){var x=ev.target,sc=P.scenes[SPOP];if(!sc||!x.dataset.sp)return;var k=x.dataset.sp;
-  if(k==='dur'){var v=parseFloat(x.value);if(!isFinite(v))return;sc.dur=clamp(v,.5,120)}else sc[k]=x.value;
+  if(k==='dur'){var v=parseFloat(x.value);if(!isFinite(v))return;sc.dur=clamp(v,.5,3600)}else sc[k]=x.value;
   if(k!=='notes'){renderStripKeepPop();draw();updateHead()}});
 $('#scenePop').addEventListener('change',function(){commit();renderPanel()});
 $('#scenePop').addEventListener('click',function(ev){var b=ev.target.closest('[data-spa]');if(!b)return;var a=b.dataset.spa,i=SPOP,sc=P.scenes[i];if(!sc)return;

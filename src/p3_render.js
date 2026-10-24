@@ -562,7 +562,7 @@ function loadThree(){
   return THREE_LOADING;
 }
 function t3Renderer(){var TH=window.THREE;if(!T3.r){T3.r=new TH.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});T3.r.setPixelRatio(1);T3.r.outputEncoding=TH.sRGBEncoding;T3.r.toneMapping=TH.ACESFilmicToneMapping}return T3.r}
-function t3Sig(e){return JSON.stringify([e.mode,e.shape,e.text,e.color,e.metal,e.rough,e.wire,e.src,(e.images||[]).join(','),e.light,e.depth3,e.font,P.theme.accent,P.theme.ink,P.theme.bg])}
+function t3Sig(e){return JSON.stringify([e.fmt,e.shape,e.text,e.color,e.metal,e.rough,e.wire,e.src,(e.images||[]).join(','),e.light,e.depth3,e.font,P.theme.accent,P.theme.ink,P.theme.bg])}
 function textCanvas(txt,color,font){var c=document.createElement('canvas'),g=c.getContext('2d'),fs=160;g.font='700 '+fs+'px '+family(font||'ui');var w=Math.ceil(g.measureText(txt).width)+40;c.width=Math.max(64,w);c.height=220;g.font='700 '+fs+'px '+family(font||'ui');g.fillStyle=color;g.textBaseline='middle';g.fillText(txt,20,115);return c}
 function t3Build(e){
   var TH=window.THREE,scene=new TH.Scene(),cam=new TH.PerspectiveCamera(35,1,.1,100),root=new TH.Group();scene.add(root);
@@ -585,9 +585,16 @@ function t3Build(e){
       var a=i/n*Math.PI*2;mesh.position.set(Math.sin(a)*R,0,Math.cos(a)*R);mesh.rotation.y=a;root.add(mesh)});
     if(!imgs.length){root.add(new TH.Mesh(new TH.PlaneGeometry(1.6,1),new TH.MeshBasicMaterial({color:0x888888})))}
   }else if(e.mode==='model'&&e.src){
-    obj.ready=false;var u=srcURL(e.src),md=mediaById(e.src);
-    fetchBin(u)
-    .then(function(ab){new TH.GLTFLoader().parse(ab,'',function(gl){var m=gl.scene;var box=new TH.Box3().setFromObject(m),size=box.getSize(new TH.Vector3()),c=box.getCenter(new TH.Vector3()),s=2.2/Math.max(size.x,size.y,size.z,1e-3);m.position.sub(c.multiplyScalar(s));m.scale.setScalar(s);root.add(m);obj.ready=true;redraw()},function(){obj.err=1;redraw()})}).catch(function(){obj.err=1;redraw()});
+    obj.ready=false;var u=srcURL(e.src),fmt=e.fmt||'glb',files=e.files||{};
+    var mgr=new TH.LoadingManager();mgr.setURLModifier(function(x){var k=String(x).split('/').pop().split('?')[0];try{k=decodeURIComponent(k)}catch(q){}return files[k]?srcURL(files[k]):x});
+    function place(m){var box=new TH.Box3().setFromObject(m),size=box.getSize(new TH.Vector3()),c=box.getCenter(new TH.Vector3()),s=2.2/Math.max(size.x,size.y,size.z,1e-3);m.position.sub(c.multiplyScalar(s));m.scale.setScalar(s);root.add(m);obj.ready=true;redraw()}
+    function fail(){obj.err=1;redraw()}
+    if(fmt==='obj'){threeExtra(['OBJLoader','MTLLoader']).then(function(){return fetch(u).then(function(r){return r.text()})}).then(function(txt){var ml=/^mtllib\s+(.+)$/m.exec(txt),mk=ml&&ml[1].trim().split('/').pop();
+      var go=function(mats){var L=new TH.OBJLoader(mgr);if(mats)L.setMaterials(mats);var g=L.parse(txt);if(!mats)g.traverse(function(o){if(o.isMesh)o.material=mat});place(g)};
+      if(mk&&files[mk])return fetch(srcURL(files[mk])).then(function(r){return r.text()}).then(function(mt){var m=new TH.MTLLoader(mgr).parse(mt,'');m.preload();go(m)});go(null)}).catch(fail)}
+    else if(fmt==='fbx'){threeExtra(['fflate','NURBSUtils','NURBSCurve','FBXLoader']).then(function(){return fetchBin(u)}).then(function(ab){place(new TH.FBXLoader(mgr).parse(ab,''))}).catch(fail)}
+    else if(fmt==='gltf'){fetch(u).then(function(r){return r.text()}).then(function(txt){new TH.GLTFLoader(mgr).parse(txt,'',function(gl){place(gl.scene)},fail)}).catch(fail)}
+    else fetchBin(u).then(function(ab){new TH.GLTFLoader(mgr).parse(ab,'',function(gl){place(gl.scene)},fail)}).catch(fail);
   }else{
     var gm={box:function(){return new TH.BoxGeometry(1.5,1.5,1.5,1,1,1)},sphere:function(){return new TH.SphereGeometry(1.05,64,32)},torus:function(){return new TH.TorusGeometry(.95,.36,48,128)},icosa:function(){return new TH.IcosahedronGeometry(1.15,0)},cylinder:function(){return new TH.CylinderGeometry(.8,.8,1.6,64)},cone:function(){return new TH.ConeGeometry(.95,1.7,64)},torusKnot:function(){return new TH.TorusKnotGeometry(.8,.28,200,32)}}[e.shape]||function(){return new TH.TorusKnotGeometry(.8,.28,200,32)};
     root.add(new TH.Mesh(gm(),mat));
@@ -634,7 +641,8 @@ function lerpEl(A,B,f){
 }
 function drawSceneEls(sc,lt,o){
   o=o||{};
-  sc.els.forEach(function(e){if(o.skip&&o.skip[e.id])return;if(!!e.fixed!==!!o.fixedPass)return;drawEl(e,lt,sc,{noAnim:o.noAnim&&o.noAnim[e.id],alpha:o.alpha})});
+  var hs=HTML_SPLIT&&HTML_SPLIT.sc===sc?HTML_SPLIT.k:1e9;
+  sc.els.forEach(function(e,i){if(i>hs)return;if(o.skip&&o.skip[e.id])return;if(!!e.fixed!==!!o.fixedPass)return;drawEl(e,lt,sc,{noAnim:o.noAnim&&o.noAnim[e.id],alpha:o.alpha})});
 }
 function drawLogo(){
   var B=P.brand;if(!B||!B.logoOn||!B.logo)return;var im=getImg(B.logo);if(!im||!im.complete||!im.naturalWidth)return;
@@ -681,9 +689,11 @@ function drawFrame(tt){
     else{var x=PW*(1-e2);ctx.beginPath();ctx.rect(x,0,PW-x,PH);ctx.clip();ctx.translate(x*.1,0);drawScene(sc,a.lt)}
     ctx.restore();
   }else{
+    HTML_SPLIT=null;if(ctx.canvas===cv&&!exporting){var hk=htmlIndex(sc,a.lt);if(hk>=0)HTML_SPLIT={sc:sc,k:hk}}
     drawScene(sc,a.lt,{noAnim:magicNoAnim(sc,a.i)});
   }
-  drawRefGhost(sc);drawLogo();drawCaptions(tt);
+  drawRefGhost(sc);
+  if(HTML_SPLIT){drawTopLayer(sc,a.lt,tt);HTML_SPLIT=null}else{drawLogo();drawCaptions(tt)}
 }
 /* Desenha qualquer projeto em qualquer canvas (comparação de versões, miniaturas) */
 function renderWith(proj,canvas,tt,scale){
@@ -749,8 +759,8 @@ function aeStart(at){
 function schedTracks(c,out,at,now){
   var tot=total(),list=[];
   P.audio.forEach(function(tr){
-    var buf=AE.buffers[tr.id];if(!buf)return;
-    var off0=Math.max(0,+tr.offset||0),tl0=+tr.start||0,tl1=Math.min(tot,tl0+buf.duration-off0);if(at>=tl1||tl1<=tl0)return;
+    var buf=AE.buffers[tr.id];if(!buf||tr.muted)return;
+    var off0=Math.max(0,+tr.offset||0),tl0=+tr.start||0,tl1=Math.min(tot,tl0+buf.duration-off0);if(+tr.dur>0)tl1=Math.min(tl1,tl0+(+tr.dur));if(at>=tl1||tl1<=tl0)return;
     var from=Math.max(at,tl0),startIn=from-at,off=off0+(from-tl0),dur=tl1-from;
     var src=c.createBufferSource();src.buffer=buf;var g=c.createGain(),vol=clamp(+tr.vol,0,2),fi=Math.max(0,+tr.fadeIn||0),fo=Math.max(0,+tr.fadeOut||0);
     function gv(T){var v=vol;if(fi>0&&T<tl0+fi)v*=clamp((T-tl0)/fi,0,1);if(fo>0&&T>tl1-fo)v*=clamp((tl1-T)/fo,0,1);return v}
